@@ -1,10 +1,10 @@
-use std::{env, fs, io};
-use std::fs::File;
-use std::io::Write;
+use std::{env};
 use std::path::PathBuf;
 use std::time::Duration;
+use async_std::fs::File;
+use async_std::io::WriteExt;
 
-use async_std::task;
+use async_std::{task, fs};
 use async_trait::async_trait;
 use bytes::Bytes;
 use log::{debug, warn};
@@ -28,6 +28,9 @@ const KDS_VCEK_CRL: &str = "crl";                // KDS_VCEK/{product_name}/crl"
 
 pub(crate) const PRODUCT_NAME_MILAN: &str = "Milan";
 
+pub(crate) const FETCH_ATTEMPTS: u8 = 5;
+pub(crate) const FETCH_ATTEMPT_SLEEP_SECS: u64 = 5;
+
 pub fn get_kds_vcek_url(product_name: String, chip_id: String,
                         boot_loader: u8, tee: u8, snp: u8, microcode: u8) -> String {
     format!("{}{}{}/{}?blSPL={:0>2}&teeSPL={:0>2}&snpSPL={:0>2}&ucodeSPL={:0>2}",
@@ -35,40 +38,55 @@ pub fn get_kds_vcek_url(product_name: String, chip_id: String,
 }
 
 pub async fn fetch_kds_vcek(product_name: String, chip_id: String,
-                            boot_loader: u8, tee: u8, snp: u8, microcode: u8) -> ::reqwest::Result<Option<Bytes>> {
+                            boot_loader: u8, tee: u8, snp: u8, microcode: u8) -> crate::error::Result<Option<Bytes>> {
     let url = get_kds_vcek_url(product_name, chip_id, boot_loader, tee, snp, microcode);
 
     // KDS will only allow requests every 10 seconds.
     let mut body: Option<Bytes> = None;
-    for _ in 0..4 {
+    for attempt in 0..FETCH_ATTEMPTS {
+        let is_last = attempt >= FETCH_ATTEMPTS - 1;
+
         match reqwest::get(&url).await {
             Ok(response) => {
                 if response.status().is_success() {
-                    body = Some(response.bytes().await?);
+                    body = Some(
+                        response.bytes().await
+                            .map_err(|e| crate::error::fetch(e))?
+                    );
                     break;
                 } else {
-                    debug!("failed to fetch VCEK from KDS, status: {}", response.status());
+                    let err_msg = format!("failed to fetch VCEK from KDS, status: {}",
+                                          response.status());
+                    if is_last {
+                        return Err(crate::error::fetch(err_msg));
+                    } else {
+                        debug!("{}", &err_msg);
+                    }
                 }
             }
             Err(err) => {
-                warn!("failed to fetch VCEK from KDS, err: {:?}", err);
+                if is_last {
+                    return Err(crate::error::fetch(err));
+                } else {
+                    warn!("failed to fetch VCEK from KDS, err: {:?}", err);
+                }
             }
         }
 
-        task::sleep(Duration::from_secs(3)).await;
+        task::sleep(Duration::from_secs(FETCH_ATTEMPT_SLEEP_SECS)).await;
     }
 
     Ok(body)
 }
 
 pub async fn get_kds_vcek(product_name: String, chip_id: String,
-                          boot_loader: u8, tee: u8, snp: u8, microcode: u8) -> Result<String, io::Error> {
+                          boot_loader: u8, tee: u8, snp: u8, microcode: u8) -> crate::error::Result<String> {
     let cert_path = PathBuf::from(format!("{}/{}/{}",
                                           env::var(ENV_KDS_VCEK_PATH_KEY)
                                               .unwrap_or(ENV_KDS_VCEK_PATH_DEFAULT.to_string()),
                                           product_name, chip_id));
     if !cert_path.exists() {
-        fs::create_dir_all(&cert_path)
+        fs::create_dir_all(&cert_path).await
             .expect(format!("failed to create dir: {} \
             (hint: you can change the path by setting {})",
                             cert_path.to_str().unwrap(), ENV_KDS_VCEK_PATH_KEY).as_str());
@@ -81,40 +99,41 @@ pub async fn get_kds_vcek(product_name: String, chip_id: String,
     cert_file_pem.push(format!("{}.pem", cert_name));
 
     if cert_file_pem.exists() {
-        return fs::read_to_string(cert_file_pem);
+        return fs::read_to_string(cert_file_pem).await
+            .map_err(|e| crate::error::io(e));
     }
 
     match fetch_kds_vcek(product_name, chip_id, boot_loader, tee, snp, microcode).await
-        .map_err(|e|
-            io::Error::new(io::ErrorKind::Other, e))? {
+        .map_err(|e| crate::error::io(e))? {
         Some(body) => {
             // Save der
             let mut cert_file_der = cert_path.clone();
             cert_file_der.push(format!("{}.der", cert_name));
 
-            let mut output = File::create(&cert_file_der)?;
+            let mut output = File::create(&cert_file_der).await
+                .map_err(|e| crate::error::io(e))?;
 
-            output.write_all(body.as_ref())?;
+            output.write_all(body.as_ref()).await
+                .map_err(|e| crate::error::io(e))?;
 
             // Save pem
             let pem = pkix::pem::der_to_pem(body.as_ref(), PEM_CERTIFICATE);
-            let mut output = File::create(&cert_file_pem)?;
+            let mut output = File::create(&cert_file_pem).await
+                .map_err(|e| crate::error::io(e))?;
 
-            write!(output, "{}", pem)?;
+            output.write_all(pem.as_bytes()).await
+                .map_err(|e| crate::error::io(e))?;
 
             Ok(pem)
         }
-        None => Err(
-            io::Error::new(io::ErrorKind::Other,
-                           "no vcek returned from ARK (retries exhausted?)")
-        )
+        None => Err(crate::error::fetch("no vcek returned from ARK (retries exhausted?)"))
     }
 }
 
 #[async_trait]
 pub trait KdsVcek {
     fn get_kds_vcek_url(&self) -> String;
-    async fn get_kds_vcek(&self) -> Result<String, io::Error>;
+    async fn get_kds_vcek(&self) -> crate::error::Result<String>;
 }
 
 #[async_trait]
@@ -125,7 +144,7 @@ impl KdsVcek for AttestationReport {
                          self.reported_tcb.snp, self.reported_tcb.microcode)
     }
 
-    async fn get_kds_vcek(&self) -> Result<String, io::Error> {
+    async fn get_kds_vcek(&self) -> crate::error::Result<String> {
         get_kds_vcek(PRODUCT_NAME_MILAN.to_string(), self.chip_id_hex(),
                      self.reported_tcb.boot_loader, self.reported_tcb.tee,
                      self.reported_tcb.snp, self.reported_tcb.microcode).await

@@ -1,5 +1,6 @@
 extern crate core;
 
+pub mod error;
 pub mod common;
 pub mod guest;
 
