@@ -6,6 +6,26 @@ use byteorder::{LittleEndian, ReadBytesExt};
 
 use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, read_exact_to_bin_vec};
 
+const POLICY_DEBUG_SHIFT: u64 = 19;
+const POLICY_MIGRATE_MA_SHIFT: u64 =	18;
+const POLICY_SMT_SHIFT: u64 = 16;
+const POLICY_ABI_MAJOR_SHIFT: u64 = 8;
+const POLICY_ABI_MINOR_SHIFT: u64 = 0;
+
+const POLICY_DEBUG_MASK: u64 = 1 << (POLICY_DEBUG_SHIFT);
+const POLICY_MIGRATE_MA_MASK: u64 = 1 << (POLICY_MIGRATE_MA_SHIFT);
+const POLICY_SMT_MASK: u64 = 1 << (POLICY_SMT_SHIFT);
+const POLICY_ABI_MAJOR_MASK: u64 = 0xFF << (POLICY_ABI_MAJOR_SHIFT);
+const POLICY_ABI_MINOR_MASK: u64 = 0xFF << (POLICY_ABI_MINOR_SHIFT);
+
+const SIG_ALGO_ECDSA_P384_SHA384: u32 = 0x1;
+
+const PLATFORM_INFO_SMT_EN_SHIFT: u64 = 0;
+const PLATFORM_INFO_SMT_EN_MASK: u64 = 1 << (PLATFORM_INFO_SMT_EN_SHIFT);
+
+const AUTHOR_KEY_EN_SHIFT: u64 =	0;
+const AUTHOR_KEY_EN_MASK: u64 = 1 << (AUTHOR_KEY_EN_SHIFT);
+
 /*
 reference: https://github.com/AMDESE/sev-guest/blob/main/include/attestation.h
 
@@ -240,6 +260,38 @@ impl AttestationReport {
         })
     }
 
+    pub fn policy_debug_allowed(&self) -> bool {
+        self.policy & POLICY_DEBUG_MASK > 0
+    }
+
+    pub fn policy_ma_allowed(&self) -> bool {
+        self.policy & POLICY_MIGRATE_MA_MASK > 0
+    }
+
+    pub fn policy_smt_allowed(&self) -> bool {
+        self.policy & POLICY_SMT_MASK > 0
+    }
+
+    pub fn policy_min_abi_major(&self) -> u64 {
+        (self.policy & POLICY_ABI_MAJOR_MASK) >> POLICY_ABI_MAJOR_SHIFT
+    }
+
+    pub fn policy_min_abi_minor(&self) -> u64 {
+        (self.policy & POLICY_ABI_MINOR_MASK) >> POLICY_ABI_MINOR_SHIFT
+    }
+
+    pub fn signature_algo_is_ecdsa_p384_sha384(&self) -> bool {
+        self.signature_algo == SIG_ALGO_ECDSA_P384_SHA384
+    }
+
+    pub fn platform_smt_enabled(&self) -> bool {
+        self.platform_info & PLATFORM_INFO_SMT_EN_MASK > 0
+    }
+
+    pub fn platform_author_key_enabled(&self) -> bool {
+        self.platform_info & AUTHOR_KEY_EN_MASK > 0
+    }
+
     pub fn report_data_hex(&self) -> String {
         fmt_bin_vec_to_hex(self.report_data.as_ref())
     }
@@ -276,10 +328,16 @@ mod tests {
         assert_eq!(report.version, 2);
         assert_eq!(report.guest_svn, 0);
         assert_eq!(report.policy, 0x30000);
+        assert_eq!(report.policy_debug_allowed(), false);
+        assert_eq!(report.policy_ma_allowed(), false);
+        assert_eq!(report.policy_smt_allowed(), true);
+        assert_eq!(report.policy_min_abi_major(), 0);
+        assert_eq!(report.policy_min_abi_minor(), 0);
         assert_eq!(report.family_id, vec![0; 16]);
         assert_eq!(report.image_id, vec![0; 16]);
         assert_eq!(report.vmpl, 0);
         assert_eq!(report.signature_algo, 1);
+        assert_eq!(report.signature_algo_is_ecdsa_p384_sha384(), true);
 
         assert_eq!(report.platform_version.boot_loader, 2);
         assert_eq!(report.platform_version.tee, 0);
@@ -289,6 +347,8 @@ mod tests {
         assert_eq!(report.platform_version.raw_decimal(), "02000000000006115");
 
         assert_eq!(report.platform_info, 0x1);
+        assert_eq!(report.platform_smt_enabled(), true);
+        assert_eq!(report.platform_author_key_enabled(), true);
         assert_eq!(report.flags, 0);
         assert_eq!(report.reserved0, 0);
         assert_eq!(report.report_data_hex(),
