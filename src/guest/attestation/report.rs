@@ -4,6 +4,8 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
+use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, read_exact_to_bin_vec};
+
 /*
 reference: https://github.com/AMDESE/sev-guest/blob/main/include/attestation.h
 
@@ -58,6 +60,7 @@ pub struct TcbVersion {
     reserved: Vec<u8>,
     snp: u8,
     microcode: u8,
+    raw: Vec<u8>,
 }
 
 #[allow(dead_code)]
@@ -65,9 +68,14 @@ impl TcbVersion {
     fn from_reader(mut rdr: impl Read) -> io::Result<Self> {
         let boot_loader = rdr.read_u8()?;
         let tee = rdr.read_u8()?;
-        let reserved = read_exact_to_vec(&mut rdr, 4)?;
+        let reserved = read_exact_to_bin_vec(&mut rdr, 4)?;
         let snp = rdr.read_u8()?;
         let microcode = rdr.read_u8()?;
+        let raw = vec![
+            boot_loader, tee,
+            reserved[0], reserved[1], reserved[2], reserved[3],
+            snp, microcode,
+        ];
 
         Ok(TcbVersion {
             boot_loader,
@@ -75,7 +83,12 @@ impl TcbVersion {
             reserved,
             snp,
             microcode,
+            raw,
         })
+    }
+
+    pub fn raw_decimal(&self) -> String {
+        fmt_bin_vec_to_decimal(self.raw.as_ref())
     }
 }
 
@@ -99,7 +112,7 @@ impl BuildVersion {
             build,
             minor,
             major,
-            reserved
+            reserved,
         })
     }
 }
@@ -114,15 +127,23 @@ pub struct Signature {
 #[allow(dead_code)]
 impl Signature {
     fn from_reader(mut rdr: impl Read) -> io::Result<Self> {
-        let r = read_exact_to_vec(&mut rdr, 72)?;
-        let s = read_exact_to_vec(&mut rdr, 72)?;
-        let reserved = read_exact_to_vec(&mut rdr, 144)?;
+        let r = read_exact_to_bin_vec(&mut rdr, 72)?;
+        let s = read_exact_to_bin_vec(&mut rdr, 72)?;
+        let reserved = read_exact_to_bin_vec(&mut rdr, 144)?;
 
         Ok(Signature {
             r,
             s,
-            reserved
+            reserved,
         })
+    }
+
+    pub fn r_hex(&self) -> String {
+        fmt_bin_vec_to_hex(self.r.as_ref())
+    }
+
+    pub fn s_hex(&self) -> String {
+        fmt_bin_vec_to_hex(self.s.as_ref())
     }
 }
 
@@ -163,29 +184,29 @@ impl AttestationReport {
         let version = rdr.read_u32::<LittleEndian>()?;
         let guest_svn = rdr.read_u32::<LittleEndian>()?;
         let policy = rdr.read_u64::<LittleEndian>()?;
-        let family_id = read_exact_to_vec(&mut rdr, 16)?;
-        let image_id = read_exact_to_vec(&mut rdr, 16)?;
+        let family_id = read_exact_to_bin_vec(&mut rdr, 16)?;
+        let image_id = read_exact_to_bin_vec(&mut rdr, 16)?;
         let vmpl = rdr.read_u32::<LittleEndian>()?;
         let signature_algo = rdr.read_u32::<LittleEndian>()?;
         let platform_version = TcbVersion::from_reader(&mut rdr)?;
         let platform_info = rdr.read_u64::<LittleEndian>()?;
         let flags = rdr.read_u32::<LittleEndian>()?;
         let reserved0 = rdr.read_u32::<LittleEndian>()?;
-        let report_data = read_exact_to_vec(&mut rdr, 64)?;
-        let measurement = read_exact_to_vec(&mut rdr, 48)?;
-        let host_data = read_exact_to_vec(&mut rdr, 32)?;
-        let id_key_digest = read_exact_to_vec(&mut rdr, 48)?;
-        let author_key_digest = read_exact_to_vec(&mut rdr, 48)?;
-        let report_id = read_exact_to_vec(&mut rdr, 32)?;
-        let report_id_ma = read_exact_to_vec(&mut rdr, 32)?;
+        let report_data = read_exact_to_bin_vec(&mut rdr, 64)?;
+        let measurement = read_exact_to_bin_vec(&mut rdr, 48)?;
+        let host_data = read_exact_to_bin_vec(&mut rdr, 32)?;
+        let id_key_digest = read_exact_to_bin_vec(&mut rdr, 48)?;
+        let author_key_digest = read_exact_to_bin_vec(&mut rdr, 48)?;
+        let report_id = read_exact_to_bin_vec(&mut rdr, 32)?;
+        let report_id_ma = read_exact_to_bin_vec(&mut rdr, 32)?;
         let reported_tcb = TcbVersion::from_reader(&mut rdr)?;
-        let reserved1 = read_exact_to_vec(&mut rdr, 24)?;
-        let chip_id = read_exact_to_vec(&mut rdr, 64)?;
+        let reserved1 = read_exact_to_bin_vec(&mut rdr, 24)?;
+        let chip_id = read_exact_to_bin_vec(&mut rdr, 64)?;
         let committed_tcb = TcbVersion::from_reader(&mut rdr)?;
         let current_build = BuildVersion::from_reader(&mut rdr)?;
         let committed_build = BuildVersion::from_reader(&mut rdr)?;
         let launch_tcb = TcbVersion::from_reader(&mut rdr)?;
-        let reserved2 = read_exact_to_vec(&mut rdr, 168)?;
+        let reserved2 = read_exact_to_bin_vec(&mut rdr, 168)?;
         let signature = Signature::from_reader(&mut rdr)?;
 
         Ok(AttestationReport {
@@ -215,16 +236,25 @@ impl AttestationReport {
             committed_build,
             launch_tcb,
             reserved2,
-            signature
+            signature,
         })
     }
-}
 
-fn read_exact_to_vec(rdr: &mut impl Read, len: usize) -> io::Result<Vec<u8>> {
-    let mut vec = vec![0;len];
-    rdr.read_exact(&mut vec)?;
+    pub fn report_data_hex(&self) -> String {
+        fmt_bin_vec_to_hex(self.report_data.as_ref())
+    }
 
-    Ok(vec)
+    pub fn measurement_hex(&self) -> String {
+        fmt_bin_vec_to_hex(self.measurement.as_ref())
+    }
+
+    pub fn report_id_hex(&self) -> String {
+        fmt_bin_vec_to_hex(self.report_id.as_ref())
+    }
+
+    pub fn chip_id_hex(&self) -> String {
+        fmt_bin_vec_to_hex(self.chip_id.as_ref())
+    }
 }
 
 #[cfg(test)]
@@ -256,18 +286,19 @@ mod tests {
         assert_eq!(report.platform_version.reserved, vec![0; 4]);
         assert_eq!(report.platform_version.snp, 6);
         assert_eq!(report.platform_version.microcode, 115);
+        assert_eq!(report.platform_version.raw_decimal(), "02000000000006115");
 
         assert_eq!(report.platform_info, 0x1);
         assert_eq!(report.flags, 0);
         assert_eq!(report.reserved0, 0);
-        assert_eq!(hex::encode(&report.report_data),
+        assert_eq!(report.report_data_hex(),
                    "e1c112ff908febc3b98b1693a6cd3564eaf8e5e6ca629d084d9f0eba99247cacdd72e369ff8941397c2807409ff66be64be908da17ad7b8a49a2a26c0e8086aa");
-        assert_eq!(hex::encode(&report.measurement),
+        assert_eq!(report.measurement_hex(),
                    "7659528961bc689a43f5be14ed063fe1c26058e5a4f0bbbfd3944aa15032404c5afb731f7826c9a007f2ad63c813b04c");
         assert_eq!(report.host_data, vec![0; 32]);
         assert_eq!(report.id_key_digest, vec![0; 48]);
         assert_eq!(report.author_key_digest, vec![0; 48]);
-        assert_eq!(hex::encode(&report.report_id),
+        assert_eq!(report.report_id_hex(),
                    "d1c1273910e39b8286661767afa497dd02465cc8e0a7082c04cf576169407e6e");
         assert_eq!(report.report_id_ma, vec![255; 32]);
 
@@ -276,9 +307,10 @@ mod tests {
         assert_eq!(report.reported_tcb.reserved, vec![0; 4]);
         assert_eq!(report.reported_tcb.snp, 5);
         assert_eq!(report.reported_tcb.microcode, 115);
+        assert_eq!(report.reported_tcb.raw_decimal(), "02000000000005115");
 
         assert_eq!(report.reserved1, vec![0; 24]);
-        assert_eq!(hex::encode(&report.chip_id),
+        assert_eq!(report.chip_id_hex(),
                    "9e1235cce6f3e507b66a9d3f2199a325cd0be17c6c50fd55c284ceff993dbf6c7e32fa16a76521bf6b78cc9ca482e572bde70e8c9f1bdfcb8267dea8e11ff77e");
 
         assert_eq!(report.committed_tcb.boot_loader, 2);
@@ -286,6 +318,7 @@ mod tests {
         assert_eq!(report.committed_tcb.reserved, vec![0; 4]);
         assert_eq!(report.committed_tcb.snp, 5);
         assert_eq!(report.committed_tcb.microcode, 115);
+        assert_eq!(report.committed_tcb.raw_decimal(), "02000000000005115");
 
         assert_eq!(report.current_build.build, 3);
         assert_eq!(report.current_build.minor, 51);
@@ -302,12 +335,13 @@ mod tests {
         assert_eq!(report.launch_tcb.reserved, vec![0; 4]);
         assert_eq!(report.launch_tcb.snp, 5);
         assert_eq!(report.launch_tcb.microcode, 115);
+        assert_eq!(report.launch_tcb.raw_decimal(), "02000000000005115");
 
         assert_eq!(report.reserved2, vec![0; 168]);
 
-        assert_eq!(hex::encode(&report.signature.r),
+        assert_eq!(report.signature.r_hex(),
                    "ad822d4e2c64aede8fecc4057f0754c1316a64d5c6e9aabcdf0d20889fb42a3bce443b561e820febd19519bb3e091b8d000000000000000000000000000000000000000000000000");
-        assert_eq!(hex::encode(&report.signature.s),
+        assert_eq!(report.signature.s_hex(),
                    "02cdeb225f047c25b8a2330bdcab6df7d4f1e773f6474787578e5ed753186b1747888d72b26c6aefa40e6357dca3cb92000000000000000000000000000000000000000000000000");
         assert_eq!(report.signature.reserved, vec![0; 144]);
     }
