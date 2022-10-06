@@ -7,7 +7,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, read_exact_to_bin_vec};
 
 const POLICY_DEBUG_SHIFT: u64 = 19;
-const POLICY_MIGRATE_MA_SHIFT: u64 =	18;
+const POLICY_MIGRATE_MA_SHIFT: u64 = 18;
 const POLICY_SMT_SHIFT: u64 = 16;
 const POLICY_ABI_MAJOR_SHIFT: u64 = 8;
 const POLICY_ABI_MINOR_SHIFT: u64 = 0;
@@ -23,7 +23,7 @@ const SIG_ALGO_ECDSA_P384_SHA384: u32 = 0x1;
 const PLATFORM_INFO_SMT_EN_SHIFT: u64 = 0;
 const PLATFORM_INFO_SMT_EN_MASK: u64 = 1 << (PLATFORM_INFO_SMT_EN_SHIFT);
 
-const AUTHOR_KEY_EN_SHIFT: u64 =	0;
+const AUTHOR_KEY_EN_SHIFT: u64 = 0;
 const AUTHOR_KEY_EN_MASK: u64 = 1 << (AUTHOR_KEY_EN_SHIFT);
 
 /*
