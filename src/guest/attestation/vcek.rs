@@ -20,13 +20,11 @@ const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
 const KDS_DEV_CERT_SITE: &str = "https://kdsintfdev.amd.com";
 #[allow(dead_code)]
 const KDS_CEK: &str = "/cek/id/";
-const KDS_VCEK: &str = "/vcek/v1/";
-// KDS_VCEK/{product_name}/{hwid}?{tcb parameter list}
+const KDS_VCEK: &str = "/vcek/v1/";              // KDS_VCEK/{product_name}/{hwid}?{tcb parameter list}
 #[allow(dead_code)]
-const KDS_VCEK_CERT_CHAIN: &str = "cert_chain";
-// KDS_VCEK/{product_name}/cert_chain
+const KDS_VCEK_CERT_CHAIN: &str = "cert_chain";  // KDS_VCEK/{product_name}/cert_chain
 #[allow(dead_code)]
-const KDS_VCEK_CRL: &str = "crl";          // KDS_VCEK/{product_name}/crl"
+const KDS_VCEK_CRL: &str = "crl";                // KDS_VCEK/{product_name}/crl"
 
 pub(crate) const PRODUCT_NAME_MILAN: &str = "Milan";
 
