@@ -1,6 +1,8 @@
 use std::{
     io::{self, Read},
 };
+use std::fs::File;
+use std::path::Path;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -75,11 +77,11 @@ struct attestation_report {
 
 #[allow(dead_code)]
 pub struct TcbVersion {
-    boot_loader: u8,
-    tee: u8,
+    pub boot_loader: u8,
+    pub tee: u8,
     reserved: Vec<u8>,
-    snp: u8,
-    microcode: u8,
+    pub snp: u8,
+    pub microcode: u8,
     raw: Vec<u8>,
 }
 
@@ -114,9 +116,9 @@ impl TcbVersion {
 
 #[allow(dead_code)]
 pub struct BuildVersion {
-    build: u8,
-    minor: u8,
-    major: u8,
+    pub build: u8,
+    pub minor: u8,
+    pub major: u8,
     reserved: u8,
 }
 
@@ -139,8 +141,8 @@ impl BuildVersion {
 
 #[allow(dead_code)]
 pub struct Signature {
-    r: Vec<u8>,
-    s: Vec<u8>,
+    pub r: Vec<u8>,
+    pub s: Vec<u8>,
     reserved: Vec<u8>,
 }
 
@@ -169,38 +171,42 @@ impl Signature {
 
 #[allow(dead_code)]
 pub struct AttestationReport {
-    version: u32,
-    guest_svn: u32,
-    policy: u64,
-    family_id: Vec<u8>,
-    image_id: Vec<u8>,
-    vmpl: u32,
-    signature_algo: u32,
-    platform_version: TcbVersion,
-    platform_info: u64,
-    flags: u32,
+    pub version: u32,
+    pub guest_svn: u32,
+    pub policy: u64,
+    pub family_id: Vec<u8>,
+    pub image_id: Vec<u8>,
+    pub vmpl: u32,
+    pub signature_algo: u32,
+    pub platform_version: TcbVersion,
+    pub platform_info: u64,
+    pub flags: u32,
     reserved0: u32,
-    report_data: Vec<u8>,
-    measurement: Vec<u8>,
-    host_data: Vec<u8>,
-    id_key_digest: Vec<u8>,
-    author_key_digest: Vec<u8>,
-    report_id: Vec<u8>,
-    report_id_ma: Vec<u8>,
-    reported_tcb: TcbVersion,
+    pub report_data: Vec<u8>,
+    pub measurement: Vec<u8>,
+    pub host_data: Vec<u8>,
+    pub id_key_digest: Vec<u8>,
+    pub author_key_digest: Vec<u8>,
+    pub report_id: Vec<u8>,
+    pub report_id_ma: Vec<u8>,
+    pub reported_tcb: TcbVersion,
     reserved1: Vec<u8>,
-    chip_id: Vec<u8>,
-    committed_tcb: TcbVersion,
-    current_build: BuildVersion,
-    committed_build: BuildVersion,
-    launch_tcb: TcbVersion,
+    pub chip_id: Vec<u8>,
+    pub committed_tcb: TcbVersion,
+    pub current_build: BuildVersion,
+    pub committed_build: BuildVersion,
+    pub launch_tcb: TcbVersion,
     reserved2: Vec<u8>,
-    signature: Signature,
+    pub signature: Signature,
 }
 
 #[allow(dead_code)]
 impl AttestationReport {
-    fn from_reader(mut rdr: impl Read) -> io::Result<Self> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        Self::from_reader(File::open(path)?)
+    }
+
+    pub fn from_reader(mut rdr: impl Read) -> io::Result<Self> {
         let version = rdr.read_u32::<LittleEndian>()?;
         let guest_svn = rdr.read_u32::<LittleEndian>()?;
         let policy = rdr.read_u64::<LittleEndian>()?;
@@ -311,7 +317,6 @@ impl AttestationReport {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
     use std::path::PathBuf;
 
     use crate::guest::attestation::report::AttestationReport;
@@ -321,9 +326,7 @@ mod tests {
         let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_file.push("resources/test/guest_report.bin");
 
-        let file = File::open(&test_file).unwrap();
-
-        let report = AttestationReport::from_reader(file).unwrap();
+        let report = AttestationReport::from_file(&test_file).unwrap();
 
         assert_eq!(report.version, 2);
         assert_eq!(report.guest_svn, 0);
