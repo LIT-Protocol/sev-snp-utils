@@ -31,6 +31,17 @@ impl Error {
         }
     }
 
+    pub(crate) fn new_msg(kind: Kind, msg: Option<String>) -> Error
+    {
+        Error {
+            inner: Box::new(Inner {
+                kind,
+                msg,
+                source: None
+            }),
+        }
+    }
+
     /// Returns true if the error is related to a fetch / reqwest
     pub fn is_fetch(&self) -> bool {
         matches!(self.inner.kind, Kind::Fetch)
@@ -39,6 +50,11 @@ impl Error {
     /// Returns true if the error is related to io
     pub fn is_io(&self) -> bool {
         matches!(self.inner.kind, Kind::Io)
+    }
+
+    /// Returns true if the error is related to certs
+    pub fn is_cert(&self) -> bool {
+        matches!(self.inner.kind, Kind::Cert)
     }
 
     #[allow(unused)]
@@ -70,6 +86,7 @@ impl fmt::Display for Error {
         match self.inner.kind {
             Kind::Fetch => f.write_str("fetch error")?,
             Kind::Io => f.write_str("io error")?,
+            Kind::Cert => f.write_str("cert error")?,
         };
 
         if let Some(msg) = &self.inner.msg {
@@ -94,6 +111,7 @@ impl StdError for Error {
 pub(crate) enum Kind {
     Fetch,
     Io,
+    Cert,
 }
 
 // constructors
@@ -106,3 +124,6 @@ pub(crate) fn io<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
     Error::new(Kind::Io, msg, Some(e))
 }
 
+pub(crate) fn cert(msg: Option<String>) -> Error {
+    Error::new_msg(Kind::Cert, msg)
+}
