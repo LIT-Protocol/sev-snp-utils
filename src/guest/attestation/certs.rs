@@ -156,5 +156,11 @@ mod tests {
             .expect("failed to call get_kds_vcek");
 
         assert_ne!(pem, "");
+
+        // Calling a second time should work (cached)
+        let pem = report.get_kds_vcek().await
+            .expect("failed to call get_kds_vcek");
+
+        assert_ne!(pem, "");
     }
 }
