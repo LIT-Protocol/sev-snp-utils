@@ -1,6 +1,4 @@
 use async_std::fs;
-use async_std::fs::File;
-use async_std::io::WriteExt;
 use async_trait::async_trait;
 use bytes::Bytes;
 use pem::parse_many;
@@ -10,6 +8,7 @@ use x509_signature::parse_certificate;
 use crate::AttestationReport;
 use crate::common::cache::cache_dir_path;
 use crate::common::fetch::fetch_url_cached;
+use crate::common::file::write_bytes_to_file;
 
 pub(crate) const PRODUCT_NAME_MILAN: &str = "Milan";
 
@@ -60,7 +59,7 @@ pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> crate::error::
     ).await
 }
 
-pub async fn get_kds_ask_and_ark_pem(product_name: &str, format: CertFormat) -> crate::error::Result<(Bytes, Bytes)> {
+pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -> crate::error::Result<(Bytes, Bytes)> {
     let cache_suffix = get_vcek_cache_suffix(product_name);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
@@ -107,54 +106,25 @@ pub async fn get_kds_ask_and_ark_pem(product_name: &str, format: CertFormat) -> 
                 ))
             }
 
-            let ask_bytes = Bytes::from(pems[0].contents.clone());
-            let ark_bytes = Bytes::from(pems[1].contents.clone());
-
             // DER
+            let ask_der_bytes = Bytes::from(pems[0].contents.clone());
+            let ark_der_bytes = Bytes::from(pems[1].contents.clone());
 
-            // Write ASK DER
-            let mut ask_output = File::create(&ask_file_der).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to create ASK DER file: {}",
-                                                              ask_file_der.to_str().unwrap()))))?;
-
-            ask_output.write_all(&ask_bytes).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to write to ASK DER file: {}",
-                                                              ask_file_der.to_str().unwrap()))))?;
-
-            // Write ARK DER
-            let mut ark_output = File::create(&ark_file_der).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to create ARK DER file: {}",
-                                                              ark_file_der.to_str().unwrap()))))?;
-
-            ark_output.write_all(&ark_bytes).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to write to ARK DER file: {}",
-                                                              ark_file_der.to_str().unwrap()))))?;
+            // Write ASK & ARK DER
+            write_bytes_to_file(ask_file_der.as_path(), &ask_der_bytes).await?;
+            write_bytes_to_file(ark_file_der.as_path(), &ark_der_bytes).await?;
 
             // PEM
-            let ask_pem = pkix::pem::der_to_pem(ask_bytes.as_ref(), PEM_CERTIFICATE);
-            let ark_pem = pkix::pem::der_to_pem(ark_bytes.as_ref(), PEM_CERTIFICATE);
+            let ask_pem_bytes = Bytes::from(pkix::pem::der_to_pem(ask_der_bytes.as_ref(), PEM_CERTIFICATE));
+            let ark_pem_bytes = Bytes::from(pkix::pem::der_to_pem(ark_der_bytes.as_ref(), PEM_CERTIFICATE));
 
-            // Write ASK PEM
-            let mut ask_output = File::create(&ask_file_pem).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to create ASK PEM file: {}",
-                                                              ask_file_pem.to_str().unwrap()))))?;
-
-            ask_output.write_all(&ask_pem.as_bytes()).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to write to ASK PEM file: {}",
-                                                              ask_file_pem.to_str().unwrap()))))?;
-
-            // Write ARK PEM
-            let mut ark_output = File::create(&ark_file_pem).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to create ARK PEM file: {}",
-                                                              ark_file_pem.to_str().unwrap()))))?;
-
-            ark_output.write_all(&ark_pem.as_bytes()).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to write to ARK PEM file: {}",
-                                                              ark_file_pem.to_str().unwrap()))))?;
+            // Write ASK & ARK PEM
+            write_bytes_to_file(ask_file_pem.as_path(), &ask_pem_bytes).await?;
+            write_bytes_to_file(ark_file_pem.as_path(), &ark_pem_bytes).await?;
 
             match format {
-                CertFormat::DER => Ok((ask_bytes, ark_bytes)),
-                CertFormat::PEM => Ok((Bytes::from(ask_pem), Bytes::from(ark_pem)))
+                CertFormat::DER => Ok((ask_der_bytes, ark_der_bytes)),
+                CertFormat::PEM => Ok((ask_pem_bytes, ark_pem_bytes))
             }
         }
         Err(e) => Err(e)
@@ -172,8 +142,8 @@ pub fn validate_ark_ask_certs(ask_bytes: &Bytes, ark_bytes: &Bytes) -> crate::er
     Ok(())
 }
 
-pub async fn get_kds_ask_and_ark_pem_and_validate(product_name: &str) -> crate::error::Result<(Bytes, Bytes)> {
-    let (ask_bytes, ark_bytes) = get_kds_ask_and_ark_pem(product_name, CertFormat::DER).await?;
+pub async fn get_kds_ask_and_ark_certs_and_validate(product_name: &str) -> crate::error::Result<(Bytes, Bytes)> {
+    let (ask_bytes, ark_bytes) = get_kds_ask_and_ark_certs(product_name, CertFormat::DER).await?;
 
     validate_ark_ask_certs(&ask_bytes, &ark_bytes)?;
 
@@ -207,35 +177,42 @@ pub async fn fetch_kds_vcek_der(product_name: &str, chip_id: &str,
 }
 
 pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
-                          boot_loader: u8, tee: u8, snp: u8, microcode: u8) -> crate::error::Result<Bytes> {
+                          boot_loader: u8, tee: u8, snp: u8, microcode: u8,
+                          format: CertFormat) -> crate::error::Result<Bytes> {
     let cache_suffix = get_vcek_chip_cache_suffix(product_name, chip_id);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
     let cert_name = get_vcek_cert_name_prefix(boot_loader, tee, snp, microcode);
 
+    let mut cert_file_der = cache_path.clone();
+    cert_file_der.push(format!("{}.der", cert_name));
+
     let mut cert_file_pem = cache_path.clone();
     cert_file_pem.push(format!("{}.pem", cert_name));
 
-    if cert_file_pem.exists().await {
-        let pem = fs::read(&cert_file_pem).await
-            .map_err(|e| crate::error::io(e, Some(format!("failed to read kds vcek pem file: {}",
-                                                          cert_file_pem.to_str().unwrap()))))?;
-        return Ok(Bytes::from(pem));
+    let want_file = match format {
+        CertFormat::DER => &cert_file_der,
+        CertFormat::PEM => &cert_file_pem
+    };
+
+    if want_file.exists().await {
+        let bytes = fs::read(&want_file).await
+            .map_err(|e| crate::error::io(e, Some(format!("failed to read kds vcek {:?} file: {}",
+                                                          format, want_file.to_str().unwrap()))))?;
+        return Ok(Bytes::from(bytes));
     }
 
     match fetch_kds_vcek_der(product_name, chip_id, boot_loader, tee, snp, microcode).await {
         Ok(body) => {
             // Extract pem
-            let pem = pkix::pem::der_to_pem(body.as_ref(), PEM_CERTIFICATE);
-            let mut output = File::create(&cert_file_pem).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to create kds vcek pem file: {}",
-                                                              cert_file_pem.to_str().unwrap()))))?;
+            let pem_bytes = Bytes::from(pkix::pem::der_to_pem(body.as_ref(), PEM_CERTIFICATE));
 
-            output.write_all(pem.as_bytes()).await
-                .map_err(|e| crate::error::io(e, Some(format!("failed to write to kds vcek pem file: {}",
-                                                              cert_file_pem.to_str().unwrap()))))?;
+            write_bytes_to_file(cert_file_pem.as_path(), &pem_bytes).await?;
 
-            Ok(Bytes::from(pem))
+            match format {
+                CertFormat::DER => Ok(body),
+                CertFormat::PEM => Ok(pem_bytes)
+            }
         }
         Err(e) => Err(e)
     }
@@ -244,7 +221,7 @@ pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
 #[async_trait]
 pub trait KdsCertificates {
     fn get_kds_vcek_der_url(&self) -> String;
-    async fn get_kds_vcek(&self) -> crate::error::Result<Bytes>;
+    async fn get_kds_vcek(&self, format: CertFormat) -> crate::error::Result<Bytes>;
 }
 
 #[async_trait]
@@ -255,10 +232,10 @@ impl KdsCertificates for AttestationReport {
                              self.reported_tcb.snp, self.reported_tcb.microcode)
     }
 
-    async fn get_kds_vcek(&self) -> crate::error::Result<Bytes> {
+    async fn get_kds_vcek(&self, format: CertFormat) -> crate::error::Result<Bytes> {
         get_kds_vcek(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
                      self.reported_tcb.boot_loader, self.reported_tcb.tee,
-                     self.reported_tcb.snp, self.reported_tcb.microcode).await
+                     self.reported_tcb.snp, self.reported_tcb.microcode, format).await
     }
 }
 
@@ -267,7 +244,7 @@ mod tests {
     use std::{env};
     use std::path::PathBuf;
 
-    use crate::guest::attestation::certs::{CertFormat, fetch_kds_vcek_cert_chain_pem, fetch_kds_vcek_der, get_kds_ask_and_ark_pem, get_kds_ask_and_ark_pem_and_validate, get_kds_vcek_cert_chain_url, KdsCertificates, PRODUCT_NAME_MILAN};
+    use crate::guest::attestation::certs::{CertFormat, fetch_kds_vcek_cert_chain_pem, fetch_kds_vcek_der, get_kds_ask_and_ark_certs, get_kds_ask_and_ark_certs_and_validate, get_kds_vcek_cert_chain_url, KdsCertificates, PRODUCT_NAME_MILAN};
     use crate::guest::attestation::report::AttestationReport;
 
     #[test]
@@ -286,14 +263,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_kds_ask_and_ark_pem_test() {
-        let (ask_pem, ark_pem) = get_kds_ask_and_ark_pem(PRODUCT_NAME_MILAN, CertFormat::PEM).await
+    async fn get_kds_ask_and_ark_certs_test() {
+        let (ask_pem, ark_pem) = get_kds_ask_and_ark_certs(PRODUCT_NAME_MILAN, CertFormat::PEM).await
             .expect("failed to call get_kds_ask_and_ark_pem");
 
         assert!(ask_pem.len() > 1000);
         assert!(ark_pem.len() > 1000);
 
-        let (ask_der, ark_der) = get_kds_ask_and_ark_pem(PRODUCT_NAME_MILAN, CertFormat::DER).await
+        let (ask_der, ark_der) = get_kds_ask_and_ark_certs(PRODUCT_NAME_MILAN, CertFormat::DER).await
             .expect("failed to call get_kds_ask_and_ark_pem");
 
         assert!(ask_der.len() > 1000);
@@ -301,8 +278,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_kds_ask_and_ark_pem_and_validate_test() {
-        let (ask_pem, ark_pem) = get_kds_ask_and_ark_pem_and_validate(PRODUCT_NAME_MILAN).await
+    async fn get_kds_ask_and_ark_certs_and_validate_test() {
+        let (ask_pem, ark_pem) = get_kds_ask_and_ark_certs_and_validate(PRODUCT_NAME_MILAN).await
             .expect("failed to call get_kds_ask_and_ark_pem_and_validate");
 
         assert!(ask_pem.len() > 1000);
@@ -343,15 +320,15 @@ mod tests {
 
         let report = AttestationReport::from_file(&test_file).unwrap();
 
-        let pem = report.get_kds_vcek().await
+        let pem = report.get_kds_vcek(CertFormat::PEM).await
             .expect("failed to call get_kds_vcek");
 
         assert_ne!(pem, "");
 
         // Calling a second time should work (cached)
-        let pem = report.get_kds_vcek().await
+        let der = report.get_kds_vcek(CertFormat::DER).await
             .expect("failed to call get_kds_vcek");
 
-        assert_ne!(pem, "");
+        assert_ne!(der, "");
     }
 }
