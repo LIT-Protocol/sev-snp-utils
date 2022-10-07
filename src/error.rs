@@ -13,17 +13,19 @@ pub(crate) type BoxError = Box<dyn StdError + Send + Sync>;
 
 struct Inner {
     kind: Kind,
+    msg: Option<String>,
     source: Option<BoxError>,
 }
 
 impl Error {
-    pub(crate) fn new<E>(kind: Kind, source: Option<E>) -> Error
+    pub(crate) fn new<E>(kind: Kind, msg: Option<String>, source: Option<E>) -> Error
         where
             E: Into<BoxError>,
     {
         Error {
             inner: Box::new(Inner {
                 kind,
+                msg,
                 source: source.map(Into::into),
             }),
         }
@@ -51,6 +53,10 @@ impl fmt::Debug for Error {
 
         builder.field("kind", &self.inner.kind);
 
+        if let Some(ref msg) = self.inner.msg {
+            builder.field("msg", msg);
+        }
+
         if let Some(ref source) = self.inner.source {
             builder.field("source", source);
         }
@@ -65,6 +71,10 @@ impl fmt::Display for Error {
             Kind::Fetch => f.write_str("fetch error")?,
             Kind::Io => f.write_str("io error")?,
         };
+
+        if let Some(msg) = &self.inner.msg {
+            write!(f, ": {}", msg)?;
+        }
 
         if let Some(e) = &self.inner.source {
             write!(f, ": {}", e)?;
@@ -88,10 +98,11 @@ pub(crate) enum Kind {
 
 // constructors
 
-pub(crate) fn fetch<E: Into<BoxError>>(e: E) -> Error {
-    Error::new(Kind::Fetch, Some(e))
+pub(crate) fn fetch<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
+    Error::new(Kind::Fetch, msg, Some(e))
 }
 
-pub(crate) fn io<E: Into<BoxError>>(e: E) -> Error {
-    Error::new(Kind::Io, Some(e))
+pub(crate) fn io<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
+    Error::new(Kind::Io, msg, Some(e))
 }
+
