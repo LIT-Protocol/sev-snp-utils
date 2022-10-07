@@ -6,3 +6,8 @@ test:
 	mkdir -p ${SEV_SNP_CACHE_PATH}
 	SEV_SNP_CACHE_PATH=${SEV_SNP_CACHE_PATH} cargo test
 	rm -rf ${SEV_SNP_CACHE_PATH}
+
+.PHONY: test-nopurge
+test-nopurge:
+	SEV_SNP_CACHE_PATH=${SEV_SNP_CACHE_PATH} cargo test
+
