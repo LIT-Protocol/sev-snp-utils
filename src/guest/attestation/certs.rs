@@ -1,12 +1,13 @@
 use async_std::fs;
 use async_trait::async_trait;
 use bytes::Bytes;
+use openssl::x509::{X509};
 use pem::parse_many;
 use pkix::pem::PEM_CERTIFICATE;
-use x509_signature::parse_certificate;
 
 use crate::AttestationReport;
 use crate::common::cache::cache_dir_path;
+use crate::common::cert::x509_validate_signature;
 use crate::common::fetch::fetch_url_cached;
 use crate::common::file::write_bytes_to_file;
 
@@ -131,13 +132,28 @@ pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -
     }
 }
 
-pub fn validate_ark_ask_certs(ask_bytes: &Bytes, ark_bytes: &Bytes) -> crate::error::Result<()> {
-    let ask_cert = parse_certificate(ask_bytes.as_ref())
-        .map_err(|e| crate::error::cert(Some(format!("failed to parse ASK cert: {:?}", e).to_string())))?;
-    let ark_cert = parse_certificate(ark_bytes.as_ref())
+pub fn validate_ark_ask_vcek_certs(ask_bytes: &Bytes, ark_bytes: &Bytes, vcek_bytes: Option<&Bytes>) -> crate::error::Result<()> {
+    let ark_cert = X509::from_der(ark_bytes.as_ref())
         .map_err(|e| crate::error::cert(Some(format!("failed to parse ARK cert: {:?}", e).to_string())))?;
+    let ask_cert = X509::from_der(ask_bytes.as_ref())
+        .map_err(|e| crate::error::cert(Some(format!("failed to parse ASK cert: {:?}", e).to_string())))?;
 
+    // Verify ARK self-signed.
+    x509_validate_signature(ark_cert.clone(), None, ark_cert.clone())
+        .map_err(|e| crate::error::cert(Some(format!("failed to verify ARK cert as self-signed: {:?}", e).to_string())))?;
 
+    // Verify ASK signed by ARK.
+    x509_validate_signature(ark_cert.clone(), None, ask_cert.clone())
+        .map_err(|e| crate::error::cert(Some(format!("failed to verify ASK cert signed by ARK: {:?}", e).to_string())))?;
+
+    if let Some(vcek_bytes) = vcek_bytes {
+        let vcek_cert = X509::from_der(vcek_bytes.as_ref())
+            .map_err(|e| crate::error::cert(Some(format!("failed to parse VCEK cert: {:?}", e).to_string())))?;
+
+        // Verify VCEK signed by ASK.
+        x509_validate_signature(ark_cert.clone(), Some(ask_cert.clone()), vcek_cert.clone())
+            .map_err(|e| crate::error::cert(Some(format!("failed to verify ASK cert signed by ARK: {:?}", e).to_string())))?;
+    }
 
     Ok(())
 }
@@ -145,7 +161,7 @@ pub fn validate_ark_ask_certs(ask_bytes: &Bytes, ark_bytes: &Bytes) -> crate::er
 pub async fn get_kds_ask_and_ark_certs_and_validate(product_name: &str) -> crate::error::Result<(Bytes, Bytes)> {
     let (ask_bytes, ark_bytes) = get_kds_ask_and_ark_certs(product_name, CertFormat::DER).await?;
 
-    validate_ark_ask_certs(&ask_bytes, &ark_bytes)?;
+    validate_ark_ask_vcek_certs(&ask_bytes, &ark_bytes, None)?;
 
     Ok((ask_bytes, ark_bytes))
 }
@@ -222,6 +238,7 @@ pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
 pub trait KdsCertificates {
     fn get_kds_vcek_der_url(&self) -> String;
     async fn get_kds_vcek(&self, format: CertFormat) -> crate::error::Result<Bytes>;
+    async fn verify_certs(&self) -> crate::error::Result<()>;
 }
 
 #[async_trait]
@@ -237,6 +254,15 @@ impl KdsCertificates for AttestationReport {
                      self.reported_tcb.boot_loader, self.reported_tcb.tee,
                      self.reported_tcb.snp, self.reported_tcb.microcode, format).await
     }
+
+    async fn verify_certs(&self) -> crate::error::Result<()> {
+        let (ask_bytes, ark_bytes) = get_kds_ask_and_ark_certs(PRODUCT_NAME_MILAN, CertFormat::DER).await?;
+        let vcek_der = get_kds_vcek(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
+                     self.reported_tcb.boot_loader, self.reported_tcb.tee,
+                     self.reported_tcb.snp, self.reported_tcb.microcode, CertFormat::DER).await?;
+
+        validate_ark_ask_vcek_certs(&ask_bytes, &ark_bytes, Some(&vcek_der))
+    }
 }
 
 #[cfg(test)]
@@ -246,6 +272,8 @@ mod tests {
 
     use crate::guest::attestation::certs::{CertFormat, fetch_kds_vcek_cert_chain_pem, fetch_kds_vcek_der, get_kds_ask_and_ark_certs, get_kds_ask_and_ark_certs_and_validate, get_kds_vcek_cert_chain_url, KdsCertificates, PRODUCT_NAME_MILAN};
     use crate::guest::attestation::report::AttestationReport;
+
+    const TEST_REPORT_BIN: &str = "resources/test/guest_report.bin";
 
     #[test]
     fn get_kds_vcek_cert_chain_url_test() {
@@ -289,7 +317,7 @@ mod tests {
     #[test]
     fn get_kds_vcek_url_test() {
         let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_file.push("resources/test/guest_report.bin");
+        test_file.push(TEST_REPORT_BIN);
 
         let report = AttestationReport::from_file(&test_file)
             .expect("failed to create AttestationReport from_file");
@@ -300,7 +328,7 @@ mod tests {
     #[tokio::test]
     async fn fetch_kds_vcek_test() {
         let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_file.push("resources/test/guest_report.bin");
+        test_file.push(TEST_REPORT_BIN);
 
         let report = AttestationReport::from_file(&test_file).unwrap();
 
@@ -316,7 +344,7 @@ mod tests {
     #[tokio::test]
     async fn get_kds_vcek_test() {
         let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_file.push("resources/test/guest_report.bin");
+        test_file.push(TEST_REPORT_BIN);
 
         let report = AttestationReport::from_file(&test_file).unwrap();
 
@@ -330,5 +358,16 @@ mod tests {
             .expect("failed to call get_kds_vcek");
 
         assert_ne!(der, "");
+    }
+
+    #[tokio::test]
+    async fn verify_certs_test() {
+        let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        test_file.push(TEST_REPORT_BIN);
+
+        let report = AttestationReport::from_file(&test_file).unwrap();
+
+        report.verify_certs().await
+            .expect("failed to call verify_certs");
     }
 }
