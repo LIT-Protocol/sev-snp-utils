@@ -2,9 +2,15 @@ use std::{
     io::{self, Read},
 };
 use std::fs::File;
+use std::io::{Seek, SeekFrom};
 use std::path::Path;
 
 use byteorder::{LittleEndian, ReadBytesExt};
+use openssl::bn::BigNum;
+use openssl::ecdsa::EcdsaSig;
+use openssl::error::ErrorStack;
+use sha2::{Digest, Sha256, Sha384};
+use sha2::digest::{Output};
 
 use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, read_exact_to_bin_vec};
 
@@ -171,6 +177,7 @@ impl Signature {
 
 #[allow(dead_code)]
 pub struct AttestationReport {
+    pub body: Vec<u8>,
     pub version: u32,
     pub guest_svn: u32,
     pub policy: u64,
@@ -206,7 +213,7 @@ impl AttestationReport {
         Self::from_reader(File::open(path)?)
     }
 
-    pub fn from_reader(mut rdr: impl Read) -> io::Result<Self> {
+    pub fn from_reader(mut rdr: impl Read + Seek) -> io::Result<Self> {
         let version = rdr.read_u32::<LittleEndian>()?;
         let guest_svn = rdr.read_u32::<LittleEndian>()?;
         let policy = rdr.read_u64::<LittleEndian>()?;
@@ -233,9 +240,18 @@ impl AttestationReport {
         let committed_build = BuildVersion::from_reader(&mut rdr)?;
         let launch_tcb = TcbVersion::from_reader(&mut rdr)?;
         let reserved2 = read_exact_to_bin_vec(&mut rdr, 168)?;
+
+        let signature_pos = rdr.stream_position()?;
         let signature = Signature::from_reader(&mut rdr)?;
 
+        // Rewind and read body (without signature)
+        let mut body = vec![0;signature_pos as usize];
+
+        rdr.seek(SeekFrom::Start(0))?;
+        rdr.read(&mut body)?;
+
         Ok(AttestationReport {
+            body,
             version,
             guest_svn,
             policy,
@@ -264,6 +280,26 @@ impl AttestationReport {
             reserved2,
             signature,
         })
+    }
+
+    pub fn sha256(&self) -> Output<Sha256> {
+        let mut hasher = Sha256::new();
+        hasher.update(self.body.as_slice());
+        hasher.finalize()
+    }
+
+    pub fn sha256_hex(&self) -> String {
+        fmt_bin_vec_to_hex(&self.sha256().to_vec())
+    }
+
+    pub fn sha384(&self) -> Output<Sha384> {
+        let mut hasher = Sha384::new();
+        hasher.update(self.body.as_slice());
+        hasher.finalize()
+    }
+
+    pub fn sha384_hex(&self) -> String {
+        fmt_bin_vec_to_hex(&self.sha384().to_vec())
     }
 
     pub fn policy_debug_allowed(&self) -> bool {
@@ -313,6 +349,21 @@ impl AttestationReport {
     pub fn chip_id_hex(&self) -> String {
         fmt_bin_vec_to_hex(self.chip_id.as_ref())
     }
+
+    pub fn id_key_digest_present(&self) -> bool {
+        self.id_key_digest.len() > 0 && self.id_key_digest != vec![0; 48]
+    }
+
+    pub fn author_key_digest_present(&self) -> bool {
+        self.author_key_digest.len() > 0 && self.author_key_digest != vec![0; 48]
+    }
+
+    pub fn ecdsa_sig(&self) -> Result<EcdsaSig, ErrorStack> {
+        EcdsaSig::from_private_components(
+            BigNum::from_slice(self.signature.r.as_slice())?,
+            BigNum::from_slice(self.signature.s.as_slice())?,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -328,6 +379,8 @@ mod tests {
 
         let report = AttestationReport::from_file(&test_file).unwrap();
 
+        assert_eq!(report.sha256_hex(), "365daa8187cc7678f057574561b00a60520bc315b957c2079675095603a1861a");
+        assert_eq!(report.sha384_hex(), "8ac02cb042d3909a0e67ecc8a89a4869d6838f0c243a5e4d417757d6c06d10ae15d84d2b728fe80a355792f671afd6b4");
         assert_eq!(report.version, 2);
         assert_eq!(report.guest_svn, 0);
         assert_eq!(report.policy, 0x30000);
@@ -360,7 +413,9 @@ mod tests {
                    "7659528961bc689a43f5be14ed063fe1c26058e5a4f0bbbfd3944aa15032404c5afb731f7826c9a007f2ad63c813b04c");
         assert_eq!(report.host_data, vec![0; 32]);
         assert_eq!(report.id_key_digest, vec![0; 48]);
+        assert_eq!(report.id_key_digest_present(), false);
         assert_eq!(report.author_key_digest, vec![0; 48]);
+        assert_eq!(report.author_key_digest_present(), false);
         assert_eq!(report.report_id_hex(),
                    "d1c1273910e39b8286661767afa497dd02465cc8e0a7082c04cf576169407e6e");
         assert_eq!(report.report_id_ma, vec![255; 32]);

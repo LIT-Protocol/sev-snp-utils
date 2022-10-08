@@ -42,21 +42,6 @@ impl Error {
         }
     }
 
-    /// Returns true if the error is related to a fetch / reqwest
-    pub fn is_fetch(&self) -> bool {
-        matches!(self.inner.kind, Kind::Fetch)
-    }
-
-    /// Returns true if the error is related to io
-    pub fn is_io(&self) -> bool {
-        matches!(self.inner.kind, Kind::Io)
-    }
-
-    /// Returns true if the error is related to certs
-    pub fn is_cert(&self) -> bool {
-        matches!(self.inner.kind, Kind::Cert)
-    }
-
     #[allow(unused)]
     pub(crate) fn into_io(self) -> io::Error {
         io::Error::new(io::ErrorKind::Other, self)

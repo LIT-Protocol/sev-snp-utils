@@ -1,13 +1,15 @@
 use async_std::fs;
 use async_trait::async_trait;
 use bytes::Bytes;
+use openssl::ec::EcKey;
+use openssl::pkey::Public;
 use openssl::x509::{X509};
 use pem::parse_many;
 use pkix::pem::PEM_CERTIFICATE;
 
 use crate::AttestationReport;
 use crate::common::cache::cache_dir_path;
-use crate::common::cert::x509_validate_signature;
+use crate::common::cert::{x509_bytes_to_ec_key, x509_validate_signature};
 use crate::common::fetch::fetch_url_cached;
 use crate::common::file::write_bytes_to_file;
 
@@ -238,6 +240,7 @@ pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
 pub trait KdsCertificates {
     fn get_kds_vcek_der_url(&self) -> String;
     async fn get_kds_vcek(&self, format: CertFormat) -> crate::error::Result<Bytes>;
+    async fn get_kds_vcek_ec_key(&self) -> crate::error::Result<EcKey<Public>>;
     async fn verify_certs(&self) -> crate::error::Result<()>;
 }
 
@@ -253,6 +256,13 @@ impl KdsCertificates for AttestationReport {
         get_kds_vcek(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
                      self.reported_tcb.boot_loader, self.reported_tcb.tee,
                      self.reported_tcb.snp, self.reported_tcb.microcode, format).await
+    }
+
+    async fn get_kds_vcek_ec_key(&self) -> crate::error::Result<EcKey<Public>> {
+        x509_bytes_to_ec_key(
+            self.get_kds_vcek(CertFormat::DER).await?
+        ).map_err(|e|
+            crate::error::cert(Some(format!("failed to extract EC Key from VCEK key: {:?}", e).to_string())))
     }
 
     async fn verify_certs(&self) -> crate::error::Result<()> {
