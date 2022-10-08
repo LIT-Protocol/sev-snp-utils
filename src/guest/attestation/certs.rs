@@ -1,7 +1,9 @@
 use async_std::fs;
+use async_std::fs::{File, OpenOptions};
 use async_std::sync::RwLock;
 use async_trait::async_trait;
 use bytes::Bytes;
+use log::warn;
 use openssl::ec::EcKey;
 use openssl::pkey::Public;
 use openssl::x509::X509;
@@ -9,10 +11,10 @@ use pem::parse_many;
 use pkix::pem::PEM_CERTIFICATE;
 
 use crate::{AttestationReport, error};
-use crate::common::cache::cache_dir_path;
+use crate::common::cache::{cache_dir_path, cache_file_path};
 use crate::common::cert::{x509_bytes_to_ec_key, x509_validate_signature};
 use crate::common::fetch::fetch_url_cached;
-use crate::common::file::write_bytes_to_file;
+use crate::common::file::{flock, write_bytes_to_file};
 use crate::error::Result as Result;
 
 pub(crate) const PRODUCT_NAME_MILAN: &str = "Milan";
@@ -38,8 +40,10 @@ const ASK_PEM_FILENAME: &str = "ask.pem";
 const ARK_DER_FILENAME: &str = "ark.der";
 const ARK_PEM_FILENAME: &str = "ark.pem";
 
-static ARK_FETCH_LOCK: RwLock<bool> = RwLock::new(true);
-static VCEK_FETCH_LOCK: RwLock<bool> = RwLock::new(true);
+const ARK_FETCH_LOCK_FILE: &str = "ark_fetch.lock";
+
+static ARK_FETCH_LOCK_FILE_MUTEX: RwLock<bool> = RwLock::new(true);
+
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[allow(unused)]
@@ -69,7 +73,7 @@ pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> Result<Bytes> 
 
 pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -> Result<(Bytes, Bytes)> {
     // Ensure all the files are written before reading.
-    let _guard = ARK_FETCH_LOCK.write().await;
+    let _guard = ArkFetchLockFile::new().await?;
 
     let cache_suffix = get_vcek_cache_suffix(product_name);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
@@ -206,7 +210,7 @@ pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
                           boot_loader: u8, tee: u8, snp: u8, microcode: u8,
                           format: CertFormat) -> Result<Bytes> {
     // Ensure all the files are written before reading.
-    let _guard = VCEK_FETCH_LOCK.write().await;
+    let _guard = ArkFetchLockFile::new().await?;
 
     let cache_suffix = get_vcek_chip_cache_suffix(product_name, chip_id);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
@@ -283,6 +287,40 @@ impl KdsCertificates for AttestationReport {
                                     self.platform_version.snp, self.platform_version.microcode, CertFormat::DER).await?;
 
         validate_ark_ask_vcek_certs(&ask_bytes, &ark_bytes, Some(&vcek_der))
+    }
+}
+
+// Utils
+
+struct ArkFetchLockFile {
+    file: File
+}
+
+impl ArkFetchLockFile {
+    pub async fn new() -> Result<Self> {
+        let _guard = ARK_FETCH_LOCK_FILE_MUTEX.write().await;
+
+        let lock_filename = cache_file_path(
+            format!("{}/{}", CACHE_PREFIX, ARK_FETCH_LOCK_FILE).as_str(), true).await;
+
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .append(true)
+            .open(&lock_filename).await
+            .map_err(error::map_io_err)?;
+
+        flock(&file, libc::LOCK_EX)?;
+
+        Ok(Self{ file })
+    }
+}
+
+impl Drop for ArkFetchLockFile {
+    fn drop(&mut self) {
+        if let Err(err) = flock(&self.file, libc::LOCK_UN) {
+            warn!("failed to unlock: {:?}", err);
+        }
     }
 }
 

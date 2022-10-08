@@ -1,3 +1,4 @@
+use std::os::unix::io::AsRawFd;
 use async_std::fs::File;
 use async_std::io::WriteExt;
 use async_std::path::Path;
@@ -13,4 +14,15 @@ pub async fn write_bytes_to_file(file: &Path, bytes: &Bytes) -> crate::error::Re
                                                       file.to_str().unwrap()))))?;
 
     Ok(())
+}
+
+pub fn flock(file: &File, flag: libc::c_int) -> crate::error::Result<()> {
+    let ret = unsafe {
+        libc::flock(file.as_raw_fd(), flag)
+    };
+    if ret < 0 {
+        Err(crate::error::io(std::io::Error::last_os_error(), None))
+    } else {
+        Ok(())
+    }
 }

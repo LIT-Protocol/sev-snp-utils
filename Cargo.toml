@@ -7,14 +7,15 @@ edition = "2021"
 exclude = ["resources/test/"]
 
 [dependencies]
+libc = { version = "0.2.134" }
+async-std = { version = "1.12.0" }
+async-trait = { version = "0.1.57" }
 byteorder = { version = "1.4.3" }
 sha2 = { version = "0.10.6" }
 reqwest = { version = "0.11.12" }
 tokio = { version = "1.21.2", features = ["full"] }
 bytes = { version = "1.2.1" }
 log = { version = "0.4.17" }
-async-std = { version = "1.12.0" }
-async-trait = { version = "0.1.57" }
 pkix = { version = "0.1.2" }
 pem = { version = "1.1.0" }
 openssl = { version = "0.10.42" }
