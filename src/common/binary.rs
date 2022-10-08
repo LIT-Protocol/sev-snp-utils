@@ -22,3 +22,9 @@ pub (crate) fn fmt_bin_vec_to_decimal(vec: &Vec<u8>) -> String {
         .map(|b| format!("{:0>2}", b))
         .collect::<String>()
 }
+
+pub (crate) fn bin_vec_reverse_bytes(vec: &Vec<u8>) -> Vec<u8> {
+    let mut res = vec.clone();
+    res.reverse();
+    res
+}

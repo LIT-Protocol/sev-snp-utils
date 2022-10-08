@@ -6,13 +6,13 @@ use std::io::{Seek, SeekFrom};
 use std::path::Path;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use openssl::bn::BigNum;
 use openssl::ecdsa::EcdsaSig;
 use openssl::error::ErrorStack;
 use sha2::{Digest, Sha256, Sha384};
-use sha2::digest::{Output};
+use sha2::digest::Output;
 
 use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, read_exact_to_bin_vec};
+use crate::common::cert::ecdsa_sig;
 
 const POLICY_DEBUG_SHIFT: u64 = 19;
 const POLICY_MIGRATE_MA_SHIFT: u64 = 18;
@@ -172,6 +172,10 @@ impl Signature {
 
     pub fn s_hex(&self) -> String {
         fmt_bin_vec_to_hex(self.s.as_ref())
+    }
+
+    pub fn to_ecdsa_sig(&self) -> Result<EcdsaSig, ErrorStack> {
+        ecdsa_sig(self.r.as_ref(), self.s.as_ref())
     }
 }
 
@@ -357,13 +361,6 @@ impl AttestationReport {
     pub fn author_key_digest_present(&self) -> bool {
         self.author_key_digest.len() > 0 && self.author_key_digest != vec![0; 48]
     }
-
-    pub fn ecdsa_sig(&self) -> Result<EcdsaSig, ErrorStack> {
-        EcdsaSig::from_private_components(
-            BigNum::from_slice(self.signature.r.as_slice())?,
-            BigNum::from_slice(self.signature.s.as_slice())?,
-        )
-    }
 }
 
 #[cfg(test)]
@@ -379,6 +376,7 @@ mod tests {
 
         let report = AttestationReport::from_file(&test_file).unwrap();
 
+        assert_eq!(report.body.len(), 672);
         assert_eq!(report.sha256_hex(), "365daa8187cc7678f057574561b00a60520bc315b957c2079675095603a1861a");
         assert_eq!(report.sha384_hex(), "8ac02cb042d3909a0e67ecc8a89a4869d6838f0c243a5e4d417757d6c06d10ae15d84d2b728fe80a355792f671afd6b4");
         assert_eq!(report.version, 2);

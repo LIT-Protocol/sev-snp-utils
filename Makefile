@@ -9,5 +9,6 @@ test:
 
 .PHONY: test-nopurge
 test-nopurge:
-	SEV_SNP_CACHE_PATH=${SEV_SNP_CACHE_PATH} cargo test -- --nocapture
+	#SEV_SNP_CACHE_PATH=${SEV_SNP_CACHE_PATH} cargo test -- --nocapture
+	SEV_SNP_CACHE_PATH=${SEV_SNP_CACHE_PATH} cargo test
 

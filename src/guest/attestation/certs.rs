@@ -3,15 +3,16 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use openssl::ec::EcKey;
 use openssl::pkey::Public;
-use openssl::x509::{X509};
+use openssl::x509::X509;
 use pem::parse_many;
 use pkix::pem::PEM_CERTIFICATE;
 
-use crate::AttestationReport;
+use crate::{AttestationReport, error};
 use crate::common::cache::cache_dir_path;
 use crate::common::cert::{x509_bytes_to_ec_key, x509_validate_signature};
 use crate::common::fetch::fetch_url_cached;
 use crate::common::file::write_bytes_to_file;
+use crate::error::Result as Result;
 
 pub(crate) const PRODUCT_NAME_MILAN: &str = "Milan";
 
@@ -25,11 +26,11 @@ const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
 const KDS_DEV_CERT_SITE: &str = "https://kdsintfdev.amd.com";
 #[allow(dead_code)]
 const KDS_CEK: &str = "/cek/id/";
-const KDS_VCEK: &str = "/vcek/v1/";              // KDS_VCEK/{product_name}/{hwid}?{tcb parameter list}
+const KDS_VCEK: &str = "/vcek/v1/";               // KDS_VCEK/{product_name}/{hwid}?{tcb parameter list}
 #[allow(dead_code)]
-const KDS_VCEK_CERT_CHAIN: &str = "cert_chain";  // KDS_VCEK/{product_name}/cert_chain
+const KDS_VCEK_CERT_CHAIN: &str = "cert_chain";   // KDS_VCEK/{product_name}/cert_chain
 #[allow(dead_code)]
-const KDS_VCEK_CRL: &str = "crl";                // KDS_VCEK/{product_name}/crl"
+const KDS_VCEK_CRL: &str = "crl";                 // KDS_VCEK/{product_name}/crl"
 
 const ASK_DER_FILENAME: &str = "ask.der";
 const ASK_PEM_FILENAME: &str = "ask.pem";
@@ -40,7 +41,7 @@ const ARK_PEM_FILENAME: &str = "ark.pem";
 #[allow(unused)]
 pub enum CertFormat {
     PEM,
-    DER
+    DER,
 }
 
 pub fn get_kds_vcek_cert_chain_url(product_name: &str) -> String {
@@ -52,7 +53,7 @@ fn get_vcek_cache_suffix(product_name: &str) -> String {
     format!("{}/{}", CACHE_PREFIX, product_name)
 }
 
-pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> crate::error::Result<Bytes> {
+pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> Result<Bytes> {
     let save_path = format!("{}/{}.pem", get_vcek_cache_suffix(product_name),
                             KDS_VCEK_CERT_CHAIN
     );
@@ -62,7 +63,7 @@ pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> crate::error::
     ).await
 }
 
-pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -> crate::error::Result<(Bytes, Bytes)> {
+pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -> Result<(Bytes, Bytes)> {
     let cache_suffix = get_vcek_cache_suffix(product_name);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
@@ -105,8 +106,8 @@ pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -
                 .map_err(|e| crate::error::io(e, Some(format!("failed to parse ARK cert chain into PEMs"))))?;
             if pems.len() != 2 {
                 return Err(crate::error::io(
-                    format!("failed to parse ARK cert chain  - PEM count {} != 2", pems.len()), None
-                ))
+                    format!("failed to parse ARK cert chain  - PEM count {} != 2", pems.len()), None,
+                ));
             }
 
             // DER
@@ -134,33 +135,33 @@ pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -
     }
 }
 
-pub fn validate_ark_ask_vcek_certs(ask_bytes: &Bytes, ark_bytes: &Bytes, vcek_bytes: Option<&Bytes>) -> crate::error::Result<()> {
+pub fn validate_ark_ask_vcek_certs(ask_bytes: &Bytes, ark_bytes: &Bytes, vcek_bytes: Option<&Bytes>) -> Result<()> {
     let ark_cert = X509::from_der(ark_bytes.as_ref())
-        .map_err(|e| crate::error::cert(Some(format!("failed to parse ARK cert: {:?}", e).to_string())))?;
+        .map_err(|e| error::cert(Some(format!("failed to parse ARK cert: {:?}", e).to_string())))?;
     let ask_cert = X509::from_der(ask_bytes.as_ref())
-        .map_err(|e| crate::error::cert(Some(format!("failed to parse ASK cert: {:?}", e).to_string())))?;
+        .map_err(|e| error::cert(Some(format!("failed to parse ASK cert: {:?}", e).to_string())))?;
 
     // Verify ARK self-signed.
     x509_validate_signature(ark_cert.clone(), None, ark_cert.clone())
-        .map_err(|e| crate::error::cert(Some(format!("failed to verify ARK cert as self-signed: {:?}", e).to_string())))?;
+        .map_err(|e| error::cert(Some(format!("failed to verify ARK cert as self-signed: {:?}", e).to_string())))?;
 
     // Verify ASK signed by ARK.
     x509_validate_signature(ark_cert.clone(), None, ask_cert.clone())
-        .map_err(|e| crate::error::cert(Some(format!("failed to verify ASK cert signed by ARK: {:?}", e).to_string())))?;
+        .map_err(|e| error::cert(Some(format!("failed to verify ASK cert signed by ARK: {:?}", e).to_string())))?;
 
     if let Some(vcek_bytes) = vcek_bytes {
         let vcek_cert = X509::from_der(vcek_bytes.as_ref())
-            .map_err(|e| crate::error::cert(Some(format!("failed to parse VCEK cert: {:?}", e).to_string())))?;
+            .map_err(|e| error::cert(Some(format!("failed to parse VCEK cert: {:?}", e).to_string())))?;
 
         // Verify VCEK signed by ASK.
         x509_validate_signature(ark_cert.clone(), Some(ask_cert.clone()), vcek_cert.clone())
-            .map_err(|e| crate::error::cert(Some(format!("failed to verify ASK cert signed by ARK: {:?}", e).to_string())))?;
+            .map_err(|e| error::cert(Some(format!("failed to verify ASK cert signed by ARK: {:?}", e).to_string())))?;
     }
 
     Ok(())
 }
 
-pub async fn get_kds_ask_and_ark_certs_and_validate(product_name: &str) -> crate::error::Result<(Bytes, Bytes)> {
+pub async fn get_kds_ask_and_ark_certs_and_validate(product_name: &str) -> Result<(Bytes, Bytes)> {
     let (ask_bytes, ark_bytes) = get_kds_ask_and_ark_certs(product_name, CertFormat::DER).await?;
 
     validate_ark_ask_vcek_certs(&ask_bytes, &ark_bytes, None)?;
@@ -183,7 +184,7 @@ pub fn get_kds_vcek_der_url(product_name: &str, chip_id: &str,
 }
 
 pub async fn fetch_kds_vcek_der(product_name: &str, chip_id: &str,
-                                boot_loader: u8, tee: u8, snp: u8, microcode: u8) -> crate::error::Result<Bytes> {
+                                boot_loader: u8, tee: u8, snp: u8, microcode: u8) -> Result<Bytes> {
     let save_path = format!("{}/{}.der",
                             get_vcek_chip_cache_suffix(product_name, chip_id),
                             get_vcek_cert_name_prefix(boot_loader, tee, snp, microcode)
@@ -196,7 +197,7 @@ pub async fn fetch_kds_vcek_der(product_name: &str, chip_id: &str,
 
 pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
                           boot_loader: u8, tee: u8, snp: u8, microcode: u8,
-                          format: CertFormat) -> crate::error::Result<Bytes> {
+                          format: CertFormat) -> Result<Bytes> {
     let cache_suffix = get_vcek_chip_cache_suffix(product_name, chip_id);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
@@ -215,8 +216,8 @@ pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
 
     if want_file.exists().await {
         let bytes = fs::read(&want_file).await
-            .map_err(|e| crate::error::io(e, Some(format!("failed to read kds vcek {:?} file: {}",
-                                                          format, want_file.to_str().unwrap()))))?;
+            .map_err(|e| error::io(e, Some(format!("failed to read kds vcek {:?} file: {}",
+                                                   format, want_file.to_str().unwrap()))))?;
         return Ok(Bytes::from(bytes));
     }
 
@@ -239,37 +240,37 @@ pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
 #[async_trait]
 pub trait KdsCertificates {
     fn get_kds_vcek_der_url(&self) -> String;
-    async fn get_kds_vcek(&self, format: CertFormat) -> crate::error::Result<Bytes>;
-    async fn get_kds_vcek_ec_key(&self) -> crate::error::Result<EcKey<Public>>;
-    async fn verify_certs(&self) -> crate::error::Result<()>;
+    async fn get_kds_vcek(&self, format: CertFormat) -> Result<Bytes>;
+    async fn get_kds_vcek_ec_key(&self) -> Result<EcKey<Public>>;
+    async fn verify_certs(&self) -> Result<()>;
 }
 
 #[async_trait]
 impl KdsCertificates for AttestationReport {
     fn get_kds_vcek_der_url(&self) -> String {
         get_kds_vcek_der_url(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
-                             self.reported_tcb.boot_loader, self.reported_tcb.tee,
-                             self.reported_tcb.snp, self.reported_tcb.microcode)
+                             self.platform_version.boot_loader, self.platform_version.tee,
+                             self.platform_version.snp, self.platform_version.microcode)
     }
 
-    async fn get_kds_vcek(&self, format: CertFormat) -> crate::error::Result<Bytes> {
+    async fn get_kds_vcek(&self, format: CertFormat) -> Result<Bytes> {
         get_kds_vcek(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
-                     self.reported_tcb.boot_loader, self.reported_tcb.tee,
-                     self.reported_tcb.snp, self.reported_tcb.microcode, format).await
+                     self.platform_version.boot_loader, self.platform_version.tee,
+                     self.platform_version.snp, self.platform_version.microcode, format).await
     }
 
-    async fn get_kds_vcek_ec_key(&self) -> crate::error::Result<EcKey<Public>> {
+    async fn get_kds_vcek_ec_key(&self) -> Result<EcKey<Public>> {
         x509_bytes_to_ec_key(
             self.get_kds_vcek(CertFormat::DER).await?
         ).map_err(|e|
-            crate::error::cert(Some(format!("failed to extract EC Key from VCEK key: {:?}", e).to_string())))
+            error::cert(Some(format!("failed to extract EC Key from VCEK key: {:?}", e).to_string())))
     }
 
-    async fn verify_certs(&self) -> crate::error::Result<()> {
+    async fn verify_certs(&self) -> Result<()> {
         let (ask_bytes, ark_bytes) = get_kds_ask_and_ark_certs(PRODUCT_NAME_MILAN, CertFormat::DER).await?;
         let vcek_der = get_kds_vcek(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
-                     self.reported_tcb.boot_loader, self.reported_tcb.tee,
-                     self.reported_tcb.snp, self.reported_tcb.microcode, CertFormat::DER).await?;
+                                    self.platform_version.boot_loader, self.platform_version.tee,
+                                    self.platform_version.snp, self.platform_version.microcode, CertFormat::DER).await?;
 
         validate_ark_ask_vcek_certs(&ask_bytes, &ark_bytes, Some(&vcek_der))
     }
@@ -277,7 +278,7 @@ impl KdsCertificates for AttestationReport {
 
 #[cfg(test)]
 mod tests {
-    use std::{env};
+    use std::env;
     use std::path::PathBuf;
 
     use crate::guest::attestation::certs::{CertFormat, fetch_kds_vcek_cert_chain_pem, fetch_kds_vcek_der, get_kds_ask_and_ark_certs, get_kds_ask_and_ark_certs_and_validate, get_kds_vcek_cert_chain_url, KdsCertificates, PRODUCT_NAME_MILAN};
@@ -332,7 +333,7 @@ mod tests {
         let report = AttestationReport::from_file(&test_file)
             .expect("failed to create AttestationReport from_file");
 
-        assert_eq!(report.get_kds_vcek_der_url(), "https://kdsintf.amd.com/vcek/v1/Milan/9e1235cce6f3e507b66a9d3f2199a325cd0be17c6c50fd55c284ceff993dbf6c7e32fa16a76521bf6b78cc9ca482e572bde70e8c9f1bdfcb8267dea8e11ff77e?blSPL=02&teeSPL=00&snpSPL=05&ucodeSPL=115");
+        assert_eq!(report.get_kds_vcek_der_url(), "https://kdsintf.amd.com/vcek/v1/Milan/9e1235cce6f3e507b66a9d3f2199a325cd0be17c6c50fd55c284ceff993dbf6c7e32fa16a76521bf6b78cc9ca482e572bde70e8c9f1bdfcb8267dea8e11ff77e?blSPL=02&teeSPL=00&snpSPL=06&ucodeSPL=115");
     }
 
     #[tokio::test]
@@ -344,8 +345,8 @@ mod tests {
 
         let vcek = fetch_kds_vcek_der(
             PRODUCT_NAME_MILAN, report.chip_id_hex().as_str(),
-            report.reported_tcb.boot_loader, report.reported_tcb.tee,
-            report.reported_tcb.snp, report.reported_tcb.microcode).await
+            report.platform_version.boot_loader, report.platform_version.tee,
+            report.platform_version.snp, report.platform_version.microcode).await
             .expect("failed to call fetch_kds_vcek_der");
 
         assert!(vcek.len() > 1000);

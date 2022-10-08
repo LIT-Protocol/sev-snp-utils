@@ -6,8 +6,9 @@ use log::{warn};
 #[cfg(test)]
 use std::{println as warn};
 
-use crate::AttestationReport;
+use crate::{AttestationReport, error};
 use crate::guest::attestation::certs::{KdsCertificates};
+use crate::error::Result as Result;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[allow(unused)]
@@ -45,12 +46,12 @@ impl Policy {
 
 #[async_trait]
 pub trait Verification {
-    async fn verify(&self, policy: Option<Policy>) -> crate::error::Result<bool>;
+    async fn verify(&self, policy: Option<Policy>) -> Result<bool>;
 }
 
 #[async_trait]
 impl Verification for AttestationReport {
-    async fn verify(&self, policy: Option<Policy>) -> crate::error::Result<bool> {
+    async fn verify(&self, policy: Option<Policy>) -> Result<bool> {
         // Verify cert chain
         self.verify_certs().await?;
 
@@ -94,15 +95,15 @@ impl Verification for AttestationReport {
     }
 }
 
-async fn verify_report_signature(report: &AttestationReport) -> crate::error::Result<bool> {
+async fn verify_report_signature(report: &AttestationReport) -> Result<bool> {
     let vcek_ec = report.get_kds_vcek_ec_key().await?;
 
-    let sig = report.ecdsa_sig()
-        .map_err(|e| crate::error::cert(Some(format!("failed to extract ECDSA sig: {:?}", e).to_string())))?;
+    let sig = report.signature.to_ecdsa_sig()
+        .map_err(|e| error::cert(Some(format!("failed to extract ECDSA sig: {:?}", e).to_string())))?;
 
     Ok(
         sig.verify(report.sha384().as_slice(), &vcek_ec)
-            .map_err(|e| crate::error::cert(Some(format!("report signature verification failed: {:?}", e).to_string())))?
+            .map_err(|e| error::cert(Some(format!("report signature verification failed: {:?}", e).to_string())))?
     )
 }
 
@@ -132,9 +133,10 @@ mod tests {
         assert_eq!(res, true);
 
         // Should fail due to missing id key
-        let res = report.verify(Some(Policy::strict())).await;
+        let res = report.verify(Some(Policy::strict())).await
+            .expect("failed to call verify");
 
-        assert!(res.is_err());
+        assert_eq!(res, false);
     }
 
     #[tokio::test]
@@ -145,7 +147,7 @@ mod tests {
         let report = AttestationReport::from_file(&test_file).unwrap();
 
         // Incorrect hash for signature.
-        assert_eq!(report.sha384_hex(), "af64903c4e4bef602438387b35aaf27635baee74c09737bbc2094c065b0c1dfca6800130e968a9c596bd57be46f897ad");
+        assert_eq!(report.sha384_hex(), "125a8e5748291b4d6ab719a28f72c9a9d28ce22b91af78fe627c29433eb03495f2cfcd4d67222abf05291f1bbf9455cd");
 
         let res = report.verify(None).await
             .expect("failed to call verify");
