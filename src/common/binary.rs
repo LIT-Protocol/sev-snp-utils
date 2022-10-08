@@ -1,10 +1,12 @@
-use std::{
-    io::{self, Read},
-};
+use std::io::Read;
 
-pub (crate) fn read_exact_to_bin_vec(rdr: &mut impl Read, len: usize) -> io::Result<Vec<u8>> {
+use crate::error;
+use crate::error::Result as Result;
+
+pub (crate) fn read_exact_to_bin_vec(rdr: &mut impl Read, len: usize) -> Result<Vec<u8>> {
     let mut vec = vec![0;len];
-    rdr.read_exact(&mut vec)?;
+    rdr.read_exact(&mut vec)
+        .map_err(error::map_io_err)?;
 
     Ok(vec)
 }

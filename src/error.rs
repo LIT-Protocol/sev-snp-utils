@@ -109,6 +109,11 @@ pub(crate) fn io<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
     Error::new(Kind::Io, msg, Some(e))
 }
 
+pub(crate) fn map_io_err<E: Into<BoxError>>(e: E) -> Error {
+    io(e, None)
+}
+
 pub(crate) fn cert(msg: Option<String>) -> Error {
     Error::new_msg(Kind::Cert, msg)
 }
+

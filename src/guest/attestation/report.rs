@@ -1,6 +1,4 @@
-use std::{
-    io::{self, Read},
-};
+use std::io::Read;
 use std::fs::File;
 use std::io::{Seek, SeekFrom};
 use std::path::Path;
@@ -13,6 +11,10 @@ use sha2::digest::Output;
 
 use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, read_exact_to_bin_vec};
 use crate::common::cert::ecdsa_sig;
+use crate::error;
+use crate::error::Result as Result;
+
+const REPORT_LAST_POSITION: u64 = 960; // End of signature.
 
 const POLICY_DEBUG_SHIFT: u64 = 19;
 const POLICY_MIGRATE_MA_SHIFT: u64 = 18;
@@ -93,12 +95,16 @@ pub struct TcbVersion {
 
 #[allow(dead_code)]
 impl TcbVersion {
-    fn from_reader(mut rdr: impl Read) -> io::Result<Self> {
-        let boot_loader = rdr.read_u8()?;
-        let tee = rdr.read_u8()?;
+    fn from_reader(mut rdr: impl Read) -> Result<Self> {
+        let boot_loader = rdr.read_u8()
+            .map_err(error::map_io_err)?;
+        let tee = rdr.read_u8()
+            .map_err(error::map_io_err)?;
         let reserved = read_exact_to_bin_vec(&mut rdr, 4)?;
-        let snp = rdr.read_u8()?;
-        let microcode = rdr.read_u8()?;
+        let snp = rdr.read_u8()
+            .map_err(error::map_io_err)?;
+        let microcode = rdr.read_u8()
+            .map_err(error::map_io_err)?;
         let raw = vec![
             boot_loader, tee,
             reserved[0], reserved[1], reserved[2], reserved[3],
@@ -130,11 +136,15 @@ pub struct BuildVersion {
 
 #[allow(dead_code)]
 impl BuildVersion {
-    fn from_reader(mut rdr: impl Read) -> io::Result<Self> {
-        let build = rdr.read_u8()?;
-        let minor = rdr.read_u8()?;
-        let major = rdr.read_u8()?;
-        let reserved = rdr.read_u8()?;
+    fn from_reader(mut rdr: impl Read) -> Result<Self> {
+        let build = rdr.read_u8()
+            .map_err(error::map_io_err)?;
+        let minor = rdr.read_u8()
+            .map_err(error::map_io_err)?;
+        let major = rdr.read_u8()
+            .map_err(error::map_io_err)?;
+        let reserved = rdr.read_u8()
+            .map_err(error::map_io_err)?;
 
         Ok(BuildVersion {
             build,
@@ -154,7 +164,7 @@ pub struct Signature {
 
 #[allow(dead_code)]
 impl Signature {
-    fn from_reader(mut rdr: impl Read) -> io::Result<Self> {
+    fn from_reader(mut rdr: impl Read) -> Result<Self> {
         let r = read_exact_to_bin_vec(&mut rdr, 72)?;
         let s = read_exact_to_bin_vec(&mut rdr, 72)?;
         let reserved = read_exact_to_bin_vec(&mut rdr, 144)?;
@@ -174,7 +184,7 @@ impl Signature {
         fmt_bin_vec_to_hex(self.s.as_ref())
     }
 
-    pub fn to_ecdsa_sig(&self) -> Result<EcdsaSig, ErrorStack> {
+    pub fn to_ecdsa_sig(&self) -> core::result::Result<EcdsaSig, ErrorStack> {
         ecdsa_sig(self.r.as_ref(), self.s.as_ref())
     }
 }
@@ -213,22 +223,44 @@ pub struct AttestationReport {
 
 #[allow(dead_code)]
 impl AttestationReport {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        Self::from_reader(File::open(path)?)
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let file = File::open(&path)
+            .map_err(|e| error::io(e, None))?;
+        let file_len = file.metadata()
+            .map_err(|e| error::io(e, None))?
+            .len();
+
+        if file_len < REPORT_LAST_POSITION {
+            return Err(error::io(
+                format!("report file is too short ({} vs {} min bytes))",
+                        file_len, REPORT_LAST_POSITION),
+                None
+            ));
+        }
+
+        Self::from_reader(file)
     }
 
-    pub fn from_reader(mut rdr: impl Read + Seek) -> io::Result<Self> {
-        let version = rdr.read_u32::<LittleEndian>()?;
-        let guest_svn = rdr.read_u32::<LittleEndian>()?;
-        let policy = rdr.read_u64::<LittleEndian>()?;
+    pub fn from_reader(mut rdr: impl Read + Seek) -> Result<Self> {
+        let version = rdr.read_u32::<LittleEndian>()
+            .map_err(error::map_io_err)?;
+        let guest_svn = rdr.read_u32::<LittleEndian>()
+            .map_err(error::map_io_err)?;
+        let policy = rdr.read_u64::<LittleEndian>()
+            .map_err(error::map_io_err)?;
         let family_id = read_exact_to_bin_vec(&mut rdr, 16)?;
         let image_id = read_exact_to_bin_vec(&mut rdr, 16)?;
-        let vmpl = rdr.read_u32::<LittleEndian>()?;
-        let signature_algo = rdr.read_u32::<LittleEndian>()?;
+        let vmpl = rdr.read_u32::<LittleEndian>()
+            .map_err(error::map_io_err)?;
+        let signature_algo = rdr.read_u32::<LittleEndian>()
+            .map_err(error::map_io_err)?;
         let platform_version = TcbVersion::from_reader(&mut rdr)?;
-        let platform_info = rdr.read_u64::<LittleEndian>()?;
-        let flags = rdr.read_u32::<LittleEndian>()?;
-        let reserved0 = rdr.read_u32::<LittleEndian>()?;
+        let platform_info = rdr.read_u64::<LittleEndian>()
+            .map_err(error::map_io_err)?;
+        let flags = rdr.read_u32::<LittleEndian>()
+            .map_err(error::map_io_err)?;
+        let reserved0 = rdr.read_u32::<LittleEndian>()
+            .map_err(error::map_io_err)?;
         let report_data = read_exact_to_bin_vec(&mut rdr, 64)?;
         let measurement = read_exact_to_bin_vec(&mut rdr, 48)?;
         let host_data = read_exact_to_bin_vec(&mut rdr, 32)?;
@@ -245,14 +277,17 @@ impl AttestationReport {
         let launch_tcb = TcbVersion::from_reader(&mut rdr)?;
         let reserved2 = read_exact_to_bin_vec(&mut rdr, 168)?;
 
-        let signature_pos = rdr.stream_position()?;
+        let signature_pos = rdr.stream_position()
+            .map_err(error::map_io_err)?;
         let signature = Signature::from_reader(&mut rdr)?;
 
         // Rewind and read body (without signature)
         let mut body = vec![0;signature_pos as usize];
 
-        rdr.seek(SeekFrom::Start(0))?;
-        rdr.read(&mut body)?;
+        rdr.seek(SeekFrom::Start(0))
+            .map_err(error::map_io_err)?;
+        rdr.read(&mut body)
+            .map_err(error::map_io_err)?;
 
         Ok(AttestationReport {
             body,
@@ -369,10 +404,13 @@ mod tests {
 
     use crate::guest::attestation::report::AttestationReport;
 
+    const TEST_REPORT_BIN: &str = "resources/test/guest_report.bin";
+    const TEST_REPORT_CORRUPT_BIN: &str = "resources/test/guest_report_corrupt.bin";
+
     #[test]
     fn attestation_report_file_test() {
         let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_file.push("resources/test/guest_report.bin");
+        test_file.push(TEST_REPORT_BIN);
 
         let report = AttestationReport::from_file(&test_file).unwrap();
 
@@ -460,5 +498,16 @@ mod tests {
         assert_eq!(report.signature.s_hex(),
                    "02cdeb225f047c25b8a2330bdcab6df7d4f1e773f6474787578e5ed753186b1747888d72b26c6aefa40e6357dca3cb92000000000000000000000000000000000000000000000000");
         assert_eq!(report.signature.reserved, vec![0; 144]);
+    }
+
+    #[test]
+    fn attestation_report_file_corrupted_test() {
+        let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        test_file.push(TEST_REPORT_CORRUPT_BIN);
+
+        let res = AttestationReport::from_file(&test_file);
+
+        assert_eq!(res.is_err(), true);
+        assert_eq!(res.err().unwrap().to_string(), "io error: report file is too short (793 vs 960 min bytes))");
     }
 }

@@ -3,13 +3,15 @@ use std::time::Duration;
 use async_std::{fs, task};
 use async_std::fs::File;
 use async_std::io::WriteExt;
+use async_std::path::PathBuf;
 use bytes::Bytes;
 use log::{debug, warn};
 
 use crate::common::cache::{cache_file_path};
+use crate::error;
 
 pub async fn fetch_url(url: &str,
-                       attempts: u8, retry_sleep_ms: u64) -> crate::error::Result<Option<Bytes>> {
+                       attempts: u8, retry_sleep_ms: u64) -> error::Result<Option<Bytes>> {
     let mut body: Option<Bytes> = None;
     for attempt in 0..attempts {
         let is_last = attempt >= attempts - 1;
@@ -18,13 +20,21 @@ pub async fn fetch_url(url: &str,
             Ok(response) => {
                 if response.status().is_success() {
                     let err_msg = format!("failed to read bytes during fetch: {}", &url);
+                    let bytes = response.bytes().await
+                        .map_err(|e|
+                            error::fetch(e, Some(err_msg)))?;
 
-                    body = Some(
-                        response.bytes().await
-                            .map_err(|e|
-                                crate::error::fetch(e, Some(err_msg)))?
-                    );
-                    break;
+                    if bytes.len() > 0 {
+                        body = Some(bytes);
+                        break;
+                    } else {
+                        let err_msg = format!("failed to fetch URL '{}', empty response", url);
+                        if is_last {
+                            return Err(crate::error::fetch(err_msg, None));
+                        } else {
+                            debug!("{}", &err_msg);
+                        }
+                    }
                 } else {
                     let err_msg = format!("failed to fetch URL '{}', status: {}",
                                           url, response.status());
@@ -49,19 +59,16 @@ pub async fn fetch_url(url: &str,
         task::sleep(Duration::from_millis(retry_sleep_ms)).await;
     }
 
+    println!("FETCH: {}", url);
+
     Ok(body)
 }
 
 pub async fn fetch_url_cached(url: &str, path: &str,
-                              attempts: u8, retry_sleep_ms: u64) -> crate::error::Result<Bytes> {
+                              attempts: u8, retry_sleep_ms: u64) -> error::Result<Bytes> {
     let full_path = cache_file_path(path, true).await;
-
     if full_path.exists().await {
-        return match fs::read(&full_path).await {
-            Ok(buf) => Ok(Bytes::from(buf)),
-            Err(e) => Err(crate::error::io(e, Some(format!("failed to read cached file: {}",
-                                                           full_path.to_str().unwrap()))))
-        };
+        return read_cached_file(full_path).await;
     }
 
     match fetch_url(url, attempts, retry_sleep_ms).await? {
@@ -77,5 +84,13 @@ pub async fn fetch_url_cached(url: &str, path: &str,
             Ok(body)
         }
         None => Err(crate::error::fetch("Nothing fetched (retries exhausted?)", None))
+    }
+}
+
+async fn read_cached_file(full_path: PathBuf) -> error::Result<Bytes> {
+    match fs::read(&full_path).await {
+        Ok(buf) => Ok(Bytes::from(buf)),
+        Err(e) => Err(crate::error::io(e, Some(format!("failed to read cached file: {}",
+                                                       full_path.to_str().unwrap()))))
     }
 }

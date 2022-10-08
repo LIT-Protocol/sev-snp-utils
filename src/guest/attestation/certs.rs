@@ -1,4 +1,5 @@
 use async_std::fs;
+use async_std::sync::RwLock;
 use async_trait::async_trait;
 use bytes::Bytes;
 use openssl::ec::EcKey;
@@ -19,7 +20,7 @@ pub(crate) const PRODUCT_NAME_MILAN: &str = "Milan";
 pub(crate) const CACHE_PREFIX: &str = "certs";
 
 pub(crate) const FETCH_ATTEMPTS: u8 = 5;
-pub(crate) const FETCH_ATTEMPT_SLEEP_MS: u64 = 5000;
+pub(crate) const FETCH_ATTEMPT_SLEEP_MS: u64 = 7000;
 
 const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
 #[allow(dead_code)]
@@ -36,6 +37,9 @@ const ASK_DER_FILENAME: &str = "ask.der";
 const ASK_PEM_FILENAME: &str = "ask.pem";
 const ARK_DER_FILENAME: &str = "ark.der";
 const ARK_PEM_FILENAME: &str = "ark.pem";
+
+static ARK_FETCH_LOCK: RwLock<bool> = RwLock::new(true);
+static VCEK_FETCH_LOCK: RwLock<bool> = RwLock::new(true);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[allow(unused)]
@@ -64,6 +68,9 @@ pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> Result<Bytes> 
 }
 
 pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -> Result<(Bytes, Bytes)> {
+    // Ensure all the files are written before reading.
+    let _guard = ARK_FETCH_LOCK.write().await;
+
     let cache_suffix = get_vcek_cache_suffix(product_name);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
@@ -198,6 +205,9 @@ pub async fn fetch_kds_vcek_der(product_name: &str, chip_id: &str,
 pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
                           boot_loader: u8, tee: u8, snp: u8, microcode: u8,
                           format: CertFormat) -> Result<Bytes> {
+    // Ensure all the files are written before reading.
+    let _guard = VCEK_FETCH_LOCK.write().await;
+
     let cache_suffix = get_vcek_chip_cache_suffix(product_name, chip_id);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
