@@ -105,7 +105,7 @@ pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -
     };
 
     {
-        // First try a read lock.
+        // Try read lock first and check if exists.
         let _guard = ArkFetchLockFile::read().await?;
 
         if ask_want.exists().await && ark_want.exists().await {
