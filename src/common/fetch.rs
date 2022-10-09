@@ -5,9 +5,9 @@ use async_std::fs::File;
 use async_std::io::WriteExt;
 use async_std::path::PathBuf;
 use bytes::Bytes;
-use log::{debug};
+use log::debug;
 
-use crate::common::cache::{cache_file_path};
+use crate::common::cache::cache_file_path;
 use crate::error;
 
 pub async fn fetch_url(url: &str,
@@ -15,11 +15,12 @@ pub async fn fetch_url(url: &str,
     let mut body: Option<Bytes> = None;
     for attempt in 0..attempts {
         let is_last = attempt >= attempts - 1;
+        let mut err_msg: String;
 
         match reqwest::get(url).await {
             Ok(response) => {
                 if response.status().is_success() {
-                    let err_msg = format!("failed to read bytes during fetch: {}", &url);
+                    err_msg = format!("failed to read bytes during fetch: {}", &url);
                     let bytes = response.bytes().await
                         .map_err(|e|
                             error::fetch(e, Some(err_msg)))?;
@@ -28,33 +29,23 @@ pub async fn fetch_url(url: &str,
                         body = Some(bytes);
                         break;
                     } else {
-                        let err_msg = format!("failed to fetch URL '{}', empty response", url);
-                        if is_last {
-                            return Err(crate::error::fetch(err_msg, None));
-                        } else {
-                            debug!("{} (attempt {} of {})", &err_msg, attempt+1, attempts);
-                        }
+                        err_msg = format!("failed to fetch URL '{}', empty response", url);
                     }
                 } else {
-                    let err_msg = format!("failed to fetch URL '{}', status: {}",
-                                          url, response.status());
-                    if is_last {
-                        return Err(crate::error::fetch(err_msg, None));
-                    } else {
-                        debug!("{} (attempt {} of {})", &err_msg, attempt+1, attempts);
-                    }
+                    err_msg = format!("failed to fetch URL '{}', status: {}",
+                                      url, response.status());
                 }
             }
             Err(err) => {
-                let err_msg = format!("failed to fetch URL '{}': {:?}", url, err);
-
-                if is_last {
-                    return Err(crate::error::fetch(err, Some(err_msg)));
-                } else {
-                    debug!("{} (attempt {} of {})", &err_msg, attempt+1, attempts);
-                }
+                err_msg = format!("failed to fetch URL '{}': {:?}", url, err);
             }
         }
+
+        if is_last {
+            return Err(error::fetch(err_msg, None));
+        }
+
+        debug!("{} (attempt {} of {})", &err_msg, attempt+1, attempts);
 
         task::sleep(Duration::from_millis(retry_sleep_ms)).await;
     }
