@@ -128,7 +128,7 @@ async fn get_certs() {
         .expect("failed to get ARK/ASK certs");
     
     // Validate
-    validate_ark_ask_vcek_certs(&ark_pem, &ask_cert, Some(&cert))
+    validate_ark_ask_vcek_certs(&ark_cert, &ask_cert, Some(&cert))
         .expect("failed to validate certs");
 }
 ```
