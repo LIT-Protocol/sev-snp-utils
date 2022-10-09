@@ -2,6 +2,14 @@
 
 AMD SEV-SNP rust utils and primitives.
 
+## Testing
+
+Instead of `cargo test`, run:
+
+```shell
+make test
+```
+
 ## Environment
 
 | Variable                   | Default            | Description                         |
@@ -74,4 +82,53 @@ let policy = Policy::new(
   true, // require_id_key
   true  // require_author_key
 );
+```
+
+#### Certs
+
+You may also obtain the certificates to work with them directly:
+
+```rust
+use sev_snp_utils::{
+    AttestationReport, KdsCertificates, CertFormat,
+    get_kds_ark_ask_certs_bytes, get_kds_ark_ask_certs,
+    get_kds_ark_ask_certs_and_validate, validate_ark_ask_vcek_certs,
+    PRODUCT_NAME_MILAN
+};
+
+async fn get_certs() {
+    let report = AttestationReport::from_file("./guest_report.bin")
+        .expect("failed to parse guest report");
+
+    // VCEK
+    
+    // Raw bytes as PEM or DER (cached only on disk)
+    let pem_bytes = report.get_kds_vcek_cert_bytes(CertFormat::PEM).await
+        .expect("failed to get VCEK PEM");
+
+    let der_bytes = report.get_kds_vcek_cert_bytes(CertFormat::DER).await
+        .expect("failed to get VCEK DER");
+
+    // X509 (cached in-memory, prefer this method)
+    let cert = report.get_kds_vcek_cert().await
+        .expect("failed to get VCEK cert");
+    
+    // ARK & ASK
+
+    // Raw bytes as PEM or DER (cached only on disk)
+    let (ark_pem, ask_pem) = get_kds_ark_ask_certs_bytes(PRODUCT_NAME_MILAN, CertFormat::PEM).await
+        .expect("failed to get ARK/ASK PEMs");
+
+    // X509 (cached in-memory, prefer this method)
+    let (ark_cert, ask_cert) = get_kds_ark_ask_certs(PRODUCT_NAME_MILAN).await
+        .expect("failed to get ARK/ASK certs");
+
+    // X509 validated (cached in-memory, prefer this method)
+    let (ark_cert, ask_cert) = get_kds_ark_ask_certs_and_validate(PRODUCT_NAME_MILAN).await
+        .expect("failed to get ARK/ASK certs");
+    
+    // Validate
+    validate_ark_ask_vcek_certs(&ark_pem, &ask_cert, Some(&cert))
+        .expect("failed to validate certs");
+}
 ```

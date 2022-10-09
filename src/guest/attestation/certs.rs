@@ -21,7 +21,7 @@ use crate::common::fetch::fetch_url_cached;
 use crate::common::file::{flock, write_bytes_to_file};
 use crate::error::Result as Result;
 
-pub(crate) const PRODUCT_NAME_MILAN: &str = "Milan";
+pub const PRODUCT_NAME_MILAN: &str = "Milan";
 
 pub(crate) const CACHE_PREFIX: &str = "certs";
 
