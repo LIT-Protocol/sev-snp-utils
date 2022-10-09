@@ -389,12 +389,20 @@ impl AttestationReport {
         fmt_bin_vec_to_hex(self.chip_id.as_ref())
     }
 
+    pub fn id_key_digest_hex(&self) -> String {
+        fmt_bin_vec_to_hex(self.id_key_digest.as_ref())
+    }
+
     pub fn id_key_digest_present(&self) -> bool {
         self.id_key_digest.len() > 0 && self.id_key_digest != vec![0; 48]
     }
 
     pub fn author_key_digest_present(&self) -> bool {
         self.author_key_digest.len() > 0 && self.author_key_digest != vec![0; 48]
+    }
+
+    pub fn author_key_digest_hex(&self) -> String {
+        fmt_bin_vec_to_hex(self.author_key_digest.as_ref())
     }
 }
 
@@ -449,8 +457,12 @@ mod tests {
                    "7659528961bc689a43f5be14ed063fe1c26058e5a4f0bbbfd3944aa15032404c5afb731f7826c9a007f2ad63c813b04c");
         assert_eq!(report.host_data, vec![0; 32]);
         assert_eq!(report.id_key_digest, vec![0; 48]);
+        assert_eq!(report.id_key_digest_hex(),
+                   "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
         assert_eq!(report.id_key_digest_present(), false);
         assert_eq!(report.author_key_digest, vec![0; 48]);
+        assert_eq!(report.author_key_digest_hex(),
+                   "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
         assert_eq!(report.author_key_digest_present(), false);
         assert_eq!(report.report_id_hex(),
                    "d1c1273910e39b8286661767afa497dd02465cc8e0a7082c04cf576169407e6e");
