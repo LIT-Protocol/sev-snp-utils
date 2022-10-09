@@ -1,5 +1,6 @@
 use async_std::fs;
 use async_std::fs::{File, OpenOptions};
+use async_std::sync::{Mutex};
 use async_trait::async_trait;
 use bytes::Bytes;
 use log::warn;
@@ -8,10 +9,12 @@ use openssl::pkey::Public;
 use openssl::x509::X509;
 use pem::parse_many;
 use pkix::pem::PEM_CERTIFICATE;
+use cached::{Cached, SizedCache};
+use cached::once_cell::sync::Lazy;
 
 use crate::{AttestationReport, error};
 use crate::common::cache::{cache_dir_path, cache_file_path};
-use crate::common::cert::{x509_bytes_to_ec_key, x509_validate_signature};
+use crate::common::cert::{x509_to_ec_key, x509_validate_signature};
 use crate::common::fetch::fetch_url_cached;
 use crate::common::file::{flock, write_bytes_to_file};
 use crate::error::Result as Result;
@@ -41,6 +44,8 @@ const ARK_PEM_FILENAME: &str = "ark.pem";
 
 const ARK_FETCH_LOCK_FILE: &str = "ark_fetch.lock";
 
+static ARK_CERT_CACHE: Lazy<Mutex<SizedCache<String, (X509, X509)>>> = Lazy::new(|| Mutex::new(SizedCache::with_size(10)));
+static VCEK_CERT_CACHE: Lazy<Mutex<SizedCache<String, X509>>> = Lazy::new(|| Mutex::new(SizedCache::with_size(100)));
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[allow(unused)]
@@ -68,7 +73,7 @@ pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> Result<Bytes> 
     ).await
 }
 
-pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -> Result<(Bytes, Bytes)> {
+pub async fn get_kds_ark_ask_certs_bytes(product_name: &str, format: CertFormat) -> Result<(Bytes, Bytes)> {
     let cache_suffix = get_vcek_cache_suffix(product_name);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
@@ -101,7 +106,7 @@ pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -
             .map_err(|e| crate::error::io(e, Some(format!("failed to read ARK {:?} file: {}",
                                                           format, ark_want.to_str().unwrap()))))?;
 
-        return Ok((Bytes::from(ask_bytes), Bytes::from(ark_bytes)));
+        return Ok((Bytes::from(ark_bytes), Bytes::from(ask_bytes)));
     };
 
     {
@@ -149,20 +154,46 @@ pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -
             write_bytes_to_file(ark_file_pem.as_path(), &ark_pem_bytes).await?;
 
             match format {
-                CertFormat::DER => Ok((ask_der_bytes, ark_der_bytes)),
-                CertFormat::PEM => Ok((ask_pem_bytes, ark_pem_bytes))
+                CertFormat::DER => Ok((ark_der_bytes, ask_der_bytes)),
+                CertFormat::PEM => Ok((ark_pem_bytes, ask_pem_bytes))
             }
         }
         Err(e) => Err(e)
     }
 }
 
-pub fn validate_ark_ask_vcek_certs(ask_bytes: &Bytes, ark_bytes: &Bytes, vcek_bytes: Option<&Bytes>) -> Result<()> {
+pub async fn get_kds_ark_ask_certs(product_name: &str) -> Result<(X509, X509)> {
+    let cache_key = format!("{}", product_name);
+
+    {
+        // Load from cache
+        let mut cache = ARK_CERT_CACHE.lock().await;
+
+        match cache.cache_get(&cache_key) {
+            Some((ark_cert, ask_cert)) => {
+                return Ok((ark_cert.clone(), ask_cert.clone()));
+            }
+            None => {},
+        }
+    }
+
+    let (ark_bytes, ask_bytes) = get_kds_ark_ask_certs_bytes(product_name,
+                                                             CertFormat::DER).await?;
+
     let ark_cert = X509::from_der(ark_bytes.as_ref())
         .map_err(|e| error::cert(Some(format!("failed to parse ARK cert: {:?}", e).to_string())))?;
     let ask_cert = X509::from_der(ask_bytes.as_ref())
         .map_err(|e| error::cert(Some(format!("failed to parse ASK cert: {:?}", e).to_string())))?;
 
+    // Store in cache
+    let mut cache = ARK_CERT_CACHE.lock().await;
+
+    cache.cache_set(cache_key, (ark_cert.clone(), ask_cert.clone()));
+
+    Ok((ark_cert, ask_cert))
+}
+
+pub fn validate_ark_ask_vcek_certs(ark_cert: &X509, ask_cert: &X509, vcek_cert: Option<&X509>) -> Result<()> {
     // Verify ARK self-signed.
     x509_validate_signature(ark_cert.clone(), None, ark_cert.clone())
         .map_err(|e| error::cert(Some(format!("failed to verify ARK cert as self-signed: {:?}", e).to_string())))?;
@@ -171,10 +202,7 @@ pub fn validate_ark_ask_vcek_certs(ask_bytes: &Bytes, ark_bytes: &Bytes, vcek_by
     x509_validate_signature(ark_cert.clone(), None, ask_cert.clone())
         .map_err(|e| error::cert(Some(format!("failed to verify ASK cert signed by ARK: {:?}", e).to_string())))?;
 
-    if let Some(vcek_bytes) = vcek_bytes {
-        let vcek_cert = X509::from_der(vcek_bytes.as_ref())
-            .map_err(|e| error::cert(Some(format!("failed to parse VCEK cert: {:?}", e).to_string())))?;
-
+    if let Some(vcek_cert) = vcek_cert {
         // Verify VCEK signed by ASK.
         x509_validate_signature(ark_cert.clone(), Some(ask_cert.clone()), vcek_cert.clone())
             .map_err(|e| error::cert(Some(format!("failed to verify ASK cert signed by ARK: {:?}", e).to_string())))?;
@@ -183,12 +211,12 @@ pub fn validate_ark_ask_vcek_certs(ask_bytes: &Bytes, ark_bytes: &Bytes, vcek_by
     Ok(())
 }
 
-pub async fn get_kds_ask_and_ark_certs_and_validate(product_name: &str) -> Result<(Bytes, Bytes)> {
-    let (ask_bytes, ark_bytes) = get_kds_ask_and_ark_certs(product_name, CertFormat::DER).await?;
+pub async fn get_kds_ark_ask_certs_and_validate(product_name: &str) -> Result<(X509, X509)> {
+    let (ark_cert, ask_cert) = get_kds_ark_ask_certs(product_name).await?;
 
-    validate_ark_ask_vcek_certs(&ask_bytes, &ark_bytes, None)?;
+    validate_ark_ask_vcek_certs(&ark_cert, &ask_cert, None)?;
 
-    Ok((ask_bytes, ark_bytes))
+    Ok((ark_cert, ask_cert))
 }
 
 fn get_vcek_chip_cache_suffix(product_name: &str, chip_id: &str) -> String {
@@ -217,9 +245,9 @@ pub async fn fetch_kds_vcek_der(product_name: &str, chip_id: &str,
     ).await
 }
 
-pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
-                          boot_loader: u8, tee: u8, snp: u8, microcode: u8,
-                          format: CertFormat) -> Result<Bytes> {
+pub async fn get_kds_vcek_cert_bytes(product_name: &str, chip_id: &str,
+                                     boot_loader: u8, tee: u8, snp: u8, microcode: u8,
+                                     format: CertFormat) -> Result<Bytes> {
     let cache_suffix = get_vcek_chip_cache_suffix(product_name, chip_id);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
@@ -276,10 +304,39 @@ pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
     }
 }
 
+pub async fn get_kds_vcek_cert(product_name: &str, chip_id: &str,
+                              boot_loader: u8, tee: u8, snp: u8, microcode: u8) -> Result<X509> {
+    let cache_key = format!("{}-{}-{:0>2}{:0>2}{:0>2}{:0>2}", product_name, chip_id,
+                            boot_loader, tee, snp, microcode);
+    {
+        // Load from cache
+        let mut cache = VCEK_CERT_CACHE.lock().await;
+
+        match cache.cache_get(&cache_key) {
+            Some(cert) => return Ok(cert.clone()),
+            None => {}
+        }
+    }
+
+    let vcek_bytes = get_kds_vcek_cert_bytes(product_name, chip_id,
+                                             boot_loader, tee, snp, microcode,
+                                             CertFormat::DER).await?;
+    let vcek_cert = X509::from_der(vcek_bytes.as_ref())
+        .map_err(|e| error::cert(Some(format!("failed to parse VCEK cert: {:?}", e).to_string())))?;
+
+    // Store in cache
+    let mut cache = VCEK_CERT_CACHE.lock().await;
+
+    cache.cache_set(cache_key, vcek_cert.clone());
+
+    Ok(vcek_cert)
+}
+
 #[async_trait]
 pub trait KdsCertificates {
     fn get_kds_vcek_der_url(&self) -> String;
-    async fn get_kds_vcek(&self, format: CertFormat) -> Result<Bytes>;
+    async fn get_kds_vcek_cert_bytes(&self, format: CertFormat) -> Result<Bytes>;
+    async fn get_kds_vcek_cert(&self) -> Result<X509>;
     async fn get_kds_vcek_ec_key(&self) -> Result<EcKey<Public>>;
     async fn verify_certs(&self) -> Result<()>;
 }
@@ -292,26 +349,32 @@ impl KdsCertificates for AttestationReport {
                              self.platform_version.snp, self.platform_version.microcode)
     }
 
-    async fn get_kds_vcek(&self, format: CertFormat) -> Result<Bytes> {
-        get_kds_vcek(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
-                     self.platform_version.boot_loader, self.platform_version.tee,
-                     self.platform_version.snp, self.platform_version.microcode, format).await
+    async fn get_kds_vcek_cert_bytes(&self, format: CertFormat) -> Result<Bytes> {
+        get_kds_vcek_cert_bytes(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
+                                self.platform_version.boot_loader, self.platform_version.tee,
+                                self.platform_version.snp, self.platform_version.microcode, format).await
+    }
+
+    async fn get_kds_vcek_cert(&self) -> Result<X509> {
+        get_kds_vcek_cert(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
+                              self.platform_version.boot_loader, self.platform_version.tee,
+                              self.platform_version.snp, self.platform_version.microcode).await
     }
 
     async fn get_kds_vcek_ec_key(&self) -> Result<EcKey<Public>> {
-        x509_bytes_to_ec_key(
-            self.get_kds_vcek(CertFormat::DER).await?
+        x509_to_ec_key(
+            self.get_kds_vcek_cert().await?
         ).map_err(|e|
             error::cert(Some(format!("failed to extract EC Key from VCEK key: {:?}", e).to_string())))
     }
 
     async fn verify_certs(&self) -> Result<()> {
-        let (ask_bytes, ark_bytes) = get_kds_ask_and_ark_certs(PRODUCT_NAME_MILAN, CertFormat::DER).await?;
-        let vcek_der = get_kds_vcek(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
+        let (ask_cert, ark_cert) = get_kds_ark_ask_certs(PRODUCT_NAME_MILAN).await?;
+        let vcek_cert = get_kds_vcek_cert(PRODUCT_NAME_MILAN, self.chip_id_hex().as_str(),
                                     self.platform_version.boot_loader, self.platform_version.tee,
-                                    self.platform_version.snp, self.platform_version.microcode, CertFormat::DER).await?;
+                                    self.platform_version.snp, self.platform_version.microcode).await?;
 
-        validate_ark_ask_vcek_certs(&ask_bytes, &ark_bytes, Some(&vcek_der))
+        validate_ark_ask_vcek_certs(&ark_cert, &ask_cert, Some(&vcek_cert))
     }
 }
 
@@ -323,14 +386,14 @@ struct ArkFetchLockFile {
 
 impl ArkFetchLockFile {
     pub async fn new(flag: libc::c_int) -> Result<Self> {
-        let lock_filename = cache_file_path(
+        let filename = cache_file_path(
             format!("{}/{}", CACHE_PREFIX, ARK_FETCH_LOCK_FILE).as_str(), true).await;
 
         let file = OpenOptions::new()
             .write(true)
             .create(true)
             .append(true)
-            .open(&lock_filename).await
+            .open(&filename).await
             .map_err(error::map_io_err)?;
 
         flock(&file, flag)?;
@@ -360,10 +423,14 @@ mod tests {
     use std::env;
     use std::path::PathBuf;
 
-    use crate::guest::attestation::certs::{CertFormat, fetch_kds_vcek_cert_chain_pem, fetch_kds_vcek_der, get_kds_ask_and_ark_certs, get_kds_ask_and_ark_certs_and_validate, get_kds_vcek_cert_chain_url, KdsCertificates, PRODUCT_NAME_MILAN};
+    use crate::guest::attestation::certs::{CertFormat, fetch_kds_vcek_cert_chain_pem, fetch_kds_vcek_der, get_kds_ark_ask_certs, get_kds_ark_ask_certs_and_validate, get_kds_ark_ask_certs_bytes, get_kds_vcek_cert_chain_url, KdsCertificates, PRODUCT_NAME_MILAN};
     use crate::guest::attestation::report::AttestationReport;
 
     const TEST_REPORT_BIN: &str = "resources/test/guest_report.bin";
+
+    const TEST_ARK_MILAN_SUBJECT_STR: &str = "[organizationalUnitName = \"Engineering\", countryName = \"US\", localityName = \"Santa Clara\", stateOrProvinceName = \"CA\", organizationName = \"Advanced Micro Devices\", commonName = \"ARK-Milan\"]";
+    const TEST_SEV_MILAN_SUBJECT_STR: &str = "[organizationalUnitName = \"Engineering\", countryName = \"US\", localityName = \"Santa Clara\", stateOrProvinceName = \"CA\", organizationName = \"Advanced Micro Devices\", commonName = \"SEV-Milan\"]";
+    const TEST_SEV_VCEK_SUBJECT_STR: &str = "[organizationalUnitName = \"Engineering\", countryName = \"US\", localityName = \"Santa Clara\", stateOrProvinceName = \"CA\", organizationName = \"Advanced Micro Devices\", commonName = \"SEV-VCEK\"]";
 
     #[test]
     fn get_kds_vcek_cert_chain_url_test() {
@@ -381,27 +448,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_kds_ask_and_ark_certs_test() {
-        let (ask_pem, ark_pem) = get_kds_ask_and_ark_certs(PRODUCT_NAME_MILAN, CertFormat::PEM).await
-            .expect("failed to call get_kds_ask_and_ark_pem");
+    async fn get_kds_ark_ask_certs_bytes_test() {
+        let (ark_pem, ask_pem) = get_kds_ark_ask_certs_bytes(
+            PRODUCT_NAME_MILAN, CertFormat::PEM).await
+            .expect("failed to call get_kds_ark_ask_certs_bytes");
 
-        assert!(ask_pem.len() > 1000);
         assert!(ark_pem.len() > 1000);
+        assert!(ask_pem.len() > 1000);
 
-        let (ask_der, ark_der) = get_kds_ask_and_ark_certs(PRODUCT_NAME_MILAN, CertFormat::DER).await
-            .expect("failed to call get_kds_ask_and_ark_pem");
+        let (ark_der, ask_der) = get_kds_ark_ask_certs_bytes(
+            PRODUCT_NAME_MILAN, CertFormat::DER).await
+            .expect("failed to call get_kds_ark_ask_certs_bytes");
 
-        assert!(ask_der.len() > 1000);
         assert!(ark_der.len() > 1000);
+        assert!(ask_der.len() > 1000);
     }
 
     #[tokio::test]
-    async fn get_kds_ask_and_ark_certs_and_validate_test() {
-        let (ask_pem, ark_pem) = get_kds_ask_and_ark_certs_and_validate(PRODUCT_NAME_MILAN).await
-            .expect("failed to call get_kds_ask_and_ark_pem_and_validate");
+    async fn get_kds_ark_ask_certs_test() {
+        let (ark_cert, ask_cert) = get_kds_ark_ask_certs(
+            PRODUCT_NAME_MILAN).await
+            .expect("failed to call get_kds_ark_ask_certs");
 
-        assert!(ask_pem.len() > 1000);
-        assert!(ark_pem.len() > 1000);
+        assert_eq!(format!("{:?}", ark_cert.subject_name()), TEST_ARK_MILAN_SUBJECT_STR);
+        assert_eq!(format!("{:?}", ask_cert.subject_name()), TEST_SEV_MILAN_SUBJECT_STR);
+    }
+
+    #[tokio::test]
+    async fn get_kds_ark_ask_certs_and_validate_test() {
+        let (ark_cert, ask_cert) = get_kds_ark_ask_certs_and_validate(PRODUCT_NAME_MILAN).await
+            .expect("failed to call get_kds_ark_ask_certs_and_validate");
+
+        assert_eq!(format!("{:?}", ark_cert.subject_name()), TEST_ARK_MILAN_SUBJECT_STR);
+        assert_eq!(format!("{:?}", ask_cert.subject_name()), TEST_SEV_MILAN_SUBJECT_STR);
     }
 
     #[test]
@@ -432,22 +511,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_kds_vcek_cert_bytes_test() {
+        let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        test_file.push(TEST_REPORT_BIN);
+
+        let report = AttestationReport::from_file(&test_file).unwrap();
+
+        let pem = report.get_kds_vcek_cert_bytes(CertFormat::PEM).await
+            .expect("failed to call get_kds_vcek");
+
+        assert_ne!(pem, "");
+
+        // Calling a second time should work (cached)
+        let der = report.get_kds_vcek_cert_bytes(CertFormat::DER).await
+            .expect("failed to call get_kds_vcek");
+
+        assert_ne!(der, "");
+    }
+
+    #[tokio::test]
     async fn get_kds_vcek_test() {
         let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_file.push(TEST_REPORT_BIN);
 
         let report = AttestationReport::from_file(&test_file).unwrap();
 
-        let pem = report.get_kds_vcek(CertFormat::PEM).await
-            .expect("failed to call get_kds_vcek");
+        let cert = report.get_kds_vcek_cert().await
+            .expect("failed to call get_kds_vcek_cert");
 
-        assert_ne!(pem, "");
-
-        // Calling a second time should work (cached)
-        let der = report.get_kds_vcek(CertFormat::DER).await
-            .expect("failed to call get_kds_vcek");
-
-        assert_ne!(der, "");
+        assert_eq!(format!("{:?}", cert.subject_name()), TEST_SEV_VCEK_SUBJECT_STR);
     }
 
     #[tokio::test]

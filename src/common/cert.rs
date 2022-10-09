@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use openssl::bn::BigNum;
 use openssl::ec::EcKey;
 use openssl::ecdsa::EcdsaSig;
@@ -29,10 +28,6 @@ pub fn x509_validate_signature(root_cert: X509, intermediate_cert: Option<X509>,
                    |c| c.verify_cert())?;
 
     Ok(())
-}
-
-pub fn x509_bytes_to_ec_key(bytes: Bytes) -> Result<EcKey<Public>, ErrorStack> {
-    x509_to_ec_key(X509::from_der(bytes.as_ref())?)
 }
 
 pub fn x509_to_ec_key(cert: X509) -> Result<EcKey<Public>, ErrorStack> {
