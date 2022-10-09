@@ -36,10 +36,15 @@ fn main() {
     println!("version: {:?}", report.version);
     println!("guest_svn: {:?}", report.guest_svn);
     println!("policy: {:?}", report.policy);
+    println!("platform_version: {:?}", report.platform_version.raw_decimal());
     println!("measurement: {}", report.measurement_hex());
+    println!("report data: {}", report.report_data_hex());
     println!("id key digest: {}", report.id_key_digest_hex());
     println!("author key digest: {}", report.author_key_digest_hex());
     println!("chip id: {}", report.chip_id_hex());
+    println!("signature:");
+    println!("  r: {}", report.signature.r_hex());
+    println!("  s: {}", report.signature.s_hex());
 }
 ```
 
