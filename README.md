@@ -12,10 +12,10 @@ make test
 
 ## Environment
 
-| Variable                   | Default            | Description                         |
-|----------------------------|--------------------|-------------------------------------|
-| SEV_SNP_CACHE_PATH         | /var/cache/sev-snp | Path to store downloaded certs.     |
-| SEV_SNP_CACHE_MEM_VCEK_LEN | 100                | Entries for VCEK cert memory cache. |
+| Variable                   | Default            | Description                                   |
+|----------------------------|--------------------|-----------------------------------------------|
+| SEV_SNP_CACHE_PATH         | /var/cache/sev-snp | Path to store downloaded certs.               |
+| SEV_SNP_CACHE_ENTRIES_VCEK | 100                | Max cache entries for VCEK certs (in-memory). |
 
 ## Attestation
 

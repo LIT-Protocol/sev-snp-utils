@@ -16,7 +16,7 @@ use cached::once_cell::sync::Lazy;
 use crate::{AttestationReport, error};
 use crate::common::cache::{cache_dir_path, cache_file_path};
 use crate::common::cert::{x509_to_ec_key, x509_validate_signature};
-use crate::common::env::{ENV_CACHE_MEM_VCEK_LEN_DEFAULT, ENV_CACHE_MEM_VCEK_LEN_KEY};
+use crate::common::env::{ENV_CACHE_ENTRIES_VCEK_DEFAULT, ENV_CACHE_ENTRIES_VCEK_KEY};
 use crate::common::fetch::fetch_url_cached;
 use crate::common::file::{flock, write_bytes_to_file};
 use crate::error::Result as Result;
@@ -49,10 +49,10 @@ const ARK_FETCH_LOCK_FILE: &str = "ark_fetch.lock";
 static ARK_CERT_CACHE: Lazy<Mutex<SizedCache<String, (X509, X509)>>> = Lazy::new(||
     Mutex::new(SizedCache::with_size(10)));
 static VCEK_CERT_CACHE: Lazy<Mutex<SizedCache<String, X509>>> = Lazy::new(|| {
-    let cache_size = env::var(ENV_CACHE_MEM_VCEK_LEN_KEY)
-        .unwrap_or(ENV_CACHE_MEM_VCEK_LEN_DEFAULT.to_string())
+    let cache_size = env::var(ENV_CACHE_ENTRIES_VCEK_KEY)
+        .unwrap_or(ENV_CACHE_ENTRIES_VCEK_DEFAULT.to_string())
         .parse::<usize>()
-        .expect(format!("failed to parse env '{}' as usize", ENV_CACHE_MEM_VCEK_LEN_KEY).as_str());
+        .expect(format!("failed to parse env '{}' as usize", ENV_CACHE_ENTRIES_VCEK_KEY).as_str());
 
     Mutex::new(SizedCache::with_size(cache_size))
 });
