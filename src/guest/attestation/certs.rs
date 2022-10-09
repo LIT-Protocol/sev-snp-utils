@@ -318,7 +318,7 @@ impl KdsCertificates for AttestationReport {
 // Utils
 
 struct ArkFetchLockFile {
-    file: File
+    file: File,
 }
 
 impl ArkFetchLockFile {
@@ -335,7 +335,7 @@ impl ArkFetchLockFile {
 
         flock(&file, flag)?;
 
-        Ok(Self{ file })
+        Ok(Self { file })
     }
 
     pub async fn write() -> Result<Self> {

@@ -5,7 +5,7 @@ use async_std::fs::File;
 use async_std::io::WriteExt;
 use async_std::path::PathBuf;
 use bytes::Bytes;
-use log::{debug, warn};
+use log::{debug};
 
 use crate::common::cache::{cache_file_path};
 use crate::error;
@@ -32,7 +32,7 @@ pub async fn fetch_url(url: &str,
                         if is_last {
                             return Err(crate::error::fetch(err_msg, None));
                         } else {
-                            debug!("{}", &err_msg);
+                            debug!("{} (attempt {} of {})", &err_msg, attempt+1, attempts);
                         }
                     }
                 } else {
@@ -41,7 +41,7 @@ pub async fn fetch_url(url: &str,
                     if is_last {
                         return Err(crate::error::fetch(err_msg, None));
                     } else {
-                        debug!("{}", &err_msg);
+                        debug!("{} (attempt {} of {})", &err_msg, attempt+1, attempts);
                     }
                 }
             }
@@ -51,7 +51,7 @@ pub async fn fetch_url(url: &str,
                 if is_last {
                     return Err(crate::error::fetch(err, Some(err_msg)));
                 } else {
-                    warn!("{}", &err_msg);
+                    debug!("{} (attempt {} of {})", &err_msg, attempt+1, attempts);
                 }
             }
         }
