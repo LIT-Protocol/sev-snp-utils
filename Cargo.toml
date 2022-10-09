@@ -2,7 +2,7 @@
 name = "sev-snp-utils"
 description = "AMD SEV-SNP utils"
 authors = ["David Radunz <david.radunz@litprotocol.com>"]
-version = "0.1.0"
+version = "1.0.1"
 edition = "2021"
 exclude = ["resources/test/"]
 
