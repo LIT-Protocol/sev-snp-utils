@@ -1,6 +1,5 @@
 use async_std::fs;
 use async_std::fs::{File, OpenOptions};
-use async_std::sync::RwLock;
 use async_trait::async_trait;
 use bytes::Bytes;
 use log::warn;
@@ -21,8 +20,8 @@ pub(crate) const PRODUCT_NAME_MILAN: &str = "Milan";
 
 pub(crate) const CACHE_PREFIX: &str = "certs";
 
-pub(crate) const FETCH_ATTEMPTS: u8 = 5;
-pub(crate) const FETCH_ATTEMPT_SLEEP_MS: u64 = 7000;
+pub(crate) const FETCH_ATTEMPTS: u8 = 10;
+pub(crate) const FETCH_ATTEMPT_SLEEP_MS: u64 = 4000;
 
 const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
 #[allow(dead_code)]
@@ -41,8 +40,6 @@ const ARK_DER_FILENAME: &str = "ark.der";
 const ARK_PEM_FILENAME: &str = "ark.pem";
 
 const ARK_FETCH_LOCK_FILE: &str = "ark_fetch.lock";
-
-static ARK_FETCH_LOCK_FILE_MUTEX: RwLock<bool> = RwLock::new(true);
 
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -72,9 +69,6 @@ pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> Result<Bytes> 
 }
 
 pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -> Result<(Bytes, Bytes)> {
-    // Ensure all the files are written before reading.
-    let _guard = ArkFetchLockFile::new().await?;
-
     let cache_suffix = get_vcek_cache_suffix(product_name);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
@@ -99,7 +93,7 @@ pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -
         CertFormat::PEM => &ark_file_pem
     };
 
-    if ask_want.exists().await && ark_want.exists().await {
+    let load_files = async move || -> Result<(Bytes, Bytes)> {
         let ask_bytes = fs::read(ask_want).await
             .map_err(|e| crate::error::io(e, Some(format!("failed to read ASK {:?} file: {}",
                                                           format, ask_want.to_str().unwrap()))))?;
@@ -108,6 +102,23 @@ pub async fn get_kds_ask_and_ark_certs(product_name: &str, format: CertFormat) -
                                                           format, ark_want.to_str().unwrap()))))?;
 
         return Ok((Bytes::from(ask_bytes), Bytes::from(ark_bytes)));
+    };
+
+    {
+        // First try a read lock.
+        let _guard = ArkFetchLockFile::read().await?;
+
+        if ask_want.exists().await && ark_want.exists().await {
+            return load_files().await;
+        }
+    }
+
+    // Not found, get a write lock.
+    let _guard = ArkFetchLockFile::write().await?;
+
+    // Check one last time.
+    if ask_want.exists().await && ark_want.exists().await {
+        return load_files().await;
     }
 
     match fetch_kds_vcek_cert_chain_pem(product_name).await {
@@ -209,9 +220,6 @@ pub async fn fetch_kds_vcek_der(product_name: &str, chip_id: &str,
 pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
                           boot_loader: u8, tee: u8, snp: u8, microcode: u8,
                           format: CertFormat) -> Result<Bytes> {
-    // Ensure all the files are written before reading.
-    let _guard = ArkFetchLockFile::new().await?;
-
     let cache_suffix = get_vcek_chip_cache_suffix(product_name, chip_id);
     let cache_path = cache_dir_path(&cache_suffix, true).await;
 
@@ -228,11 +236,28 @@ pub async fn get_kds_vcek(product_name: &str, chip_id: &str,
         CertFormat::PEM => &cert_file_pem
     };
 
-    if want_file.exists().await {
+    let load_file = async move || -> Result<Bytes> {
         let bytes = fs::read(&want_file).await
             .map_err(|e| error::io(e, Some(format!("failed to read kds vcek {:?} file: {}",
                                                    format, want_file.to_str().unwrap()))))?;
         return Ok(Bytes::from(bytes));
+    };
+
+    {
+        // Try read lock first and check if exists.
+        let _guard = ArkFetchLockFile::read().await?;
+
+        if want_file.exists().await {
+            return load_file().await;
+        }
+    }
+
+    // Doesn't exist, get write lock.
+    let _guard = ArkFetchLockFile::write().await?;
+
+    // Check exists one last time.
+    if want_file.exists().await {
+        return load_file().await;
     }
 
     match fetch_kds_vcek_der(product_name, chip_id, boot_loader, tee, snp, microcode).await {
@@ -297,9 +322,7 @@ struct ArkFetchLockFile {
 }
 
 impl ArkFetchLockFile {
-    pub async fn new() -> Result<Self> {
-        let _guard = ARK_FETCH_LOCK_FILE_MUTEX.write().await;
-
+    pub async fn new(flag: libc::c_int) -> Result<Self> {
         let lock_filename = cache_file_path(
             format!("{}/{}", CACHE_PREFIX, ARK_FETCH_LOCK_FILE).as_str(), true).await;
 
@@ -310,9 +333,17 @@ impl ArkFetchLockFile {
             .open(&lock_filename).await
             .map_err(error::map_io_err)?;
 
-        flock(&file, libc::LOCK_EX)?;
+        flock(&file, flag)?;
 
         Ok(Self{ file })
+    }
+
+    pub async fn write() -> Result<Self> {
+        Self::new(libc::LOCK_EX).await
+    }
+
+    pub async fn read() -> Result<Self> {
+        Self::new(libc::LOCK_SH).await
     }
 }
 

@@ -1,3 +1,5 @@
+#![feature(async_closure)]
+
 pub mod error;
 pub mod common;
 pub mod guest;

@@ -59,8 +59,6 @@ pub async fn fetch_url(url: &str,
         task::sleep(Duration::from_millis(retry_sleep_ms)).await;
     }
 
-    println!("FETCH: {}", url);
-
     Ok(body)
 }
 
