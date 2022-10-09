@@ -39,7 +39,7 @@ fn main() {
 
 The verification process:
 
-- Download the ARK, ASK and VCEK der files from AMD and store them on disk (with in-memory cache as well).
+- Download the ARK, ASK and VCEK DER files from AMD and store them on disk (with in-memory cache as well).
 - Verify that the ARK is self-signed, the ASK (AMD SEV intermediate cert) is signed by the ARK and that the VCEK (the CPU cert) is signed by the ASK.
 - Take a SHA384 hash of the first part of the report bin (before the signature).
 - Verifies the hash against the signature on the file against the cert chain.
