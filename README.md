@@ -32,7 +32,6 @@ fn main() {
     let report = AttestationReport::from_file("./guest_report.bin")
         .expect("failed to parse guest report");
     
-    println!("hash: {}", report.sha384_hex());
     println!("version: {:?}", report.version);
     println!("guest_svn: {:?}", report.guest_svn);
     println!("policy: {:?}", report.policy);
@@ -42,6 +41,7 @@ fn main() {
     println!("id key digest: {}", report.id_key_digest_hex());
     println!("author key digest: {}", report.author_key_digest_hex());
     println!("chip id: {}", report.chip_id_hex());
+    println!("hash: {}", report.sha384_hex());
     println!("signature:");
     println!("  r: {}", report.signature.r_hex());
     println!("  s: {}", report.signature.s_hex());
