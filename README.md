@@ -40,7 +40,7 @@ fn main() {
 Verify a guest_report.bin file:
 
 ```rust
-use sev_snp_utils::{AttestationReport, Policy};
+use sev_snp_utils::{AttestationReport, Verification, Policy};
 
 async fn verify_guest() {
     let report = AttestationReport::from_file("./guest_report.bin")
