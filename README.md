@@ -4,7 +4,7 @@ AMD SEV-SNP rust utils and primitives.
 
 ## Environment
 
-| Key                        | Default            | Description                         |
+| Variable                   | Default            | Description                         |
 |----------------------------|--------------------|-------------------------------------|
 | SEV_SNP_CACHE_PATH         | /var/cache/sev-snp | Path to store downloaded certs.     |
 | SEV_SNP_CACHE_MEM_VCEK_LEN | 100                | Entries for VCEK cert memory cache. |
