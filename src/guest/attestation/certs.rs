@@ -9,7 +9,6 @@ use openssl::ec::EcKey;
 use openssl::pkey::Public;
 use openssl::x509::X509;
 use pem::parse_many;
-use pkix::pem::PEM_CERTIFICATE;
 use cached::{Cached, SizedCache};
 use cached::once_cell::sync::Lazy;
 
@@ -19,6 +18,7 @@ use crate::common::cert::{x509_to_ec_key, x509_validate_signature};
 use crate::common::env::{ENV_CACHE_ENTRIES_VCEK_DEFAULT, ENV_CACHE_ENTRIES_VCEK_KEY};
 use crate::common::fetch::fetch_url_cached;
 use crate::common::file::{flock, write_bytes_to_file};
+use crate::common::pem::{der_to_pem, PEM_CERTIFICATE};
 use crate::error::Result as Result;
 
 pub const PRODUCT_NAME_MILAN: &str = "Milan";
@@ -156,8 +156,8 @@ pub async fn get_kds_ark_ask_certs_bytes(product_name: &str, format: CertFormat)
             write_bytes_to_file(ark_file_der.as_path(), &ark_der_bytes).await?;
 
             // PEM
-            let ask_pem_bytes = Bytes::from(pkix::pem::der_to_pem(ask_der_bytes.as_ref(), PEM_CERTIFICATE));
-            let ark_pem_bytes = Bytes::from(pkix::pem::der_to_pem(ark_der_bytes.as_ref(), PEM_CERTIFICATE));
+            let ask_pem_bytes = Bytes::from(der_to_pem(ask_der_bytes.as_ref(), PEM_CERTIFICATE));
+            let ark_pem_bytes = Bytes::from(der_to_pem(ark_der_bytes.as_ref(), PEM_CERTIFICATE));
 
             // Write ASK & ARK PEM
             write_bytes_to_file(ask_file_pem.as_path(), &ask_pem_bytes).await?;
@@ -301,7 +301,7 @@ pub async fn get_kds_vcek_cert_bytes(product_name: &str, chip_id: &str,
     match fetch_kds_vcek_der(product_name, chip_id, boot_loader, tee, snp, microcode).await {
         Ok(body) => {
             // Extract pem
-            let pem_bytes = Bytes::from(pkix::pem::der_to_pem(body.as_ref(), PEM_CERTIFICATE));
+            let pem_bytes = Bytes::from(der_to_pem(body.as_ref(), PEM_CERTIFICATE));
 
             write_bytes_to_file(cert_file_pem.as_path(), &pem_bytes).await?;
 
