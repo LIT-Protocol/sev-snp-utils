@@ -6,11 +6,11 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use log::debug;
 
 use crate::common::binary::{read_exact_to_bin_vec, copy_to_fixed_size_byte_array};
-use crate::guest::attestation::snp::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestIOCTL, SEV_GUEST_DEVICE, snp_get_report};
+use crate::guest::attestation::get_report_types::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestIOCTL, SEV_GUEST_DEVICE, snp_get_report};
 use crate::{error, AttestationReport};
 use crate::error::Result as Result;
 
-use super::snp::SNP_REPORT_MSG_RESP_RESERVED_BYTES;
+use super::get_report_types::SNP_REPORT_MSG_RESP_RESERVED_BYTES;
 
 #[derive(Debug)]
 pub struct SNPReportMsgResp {

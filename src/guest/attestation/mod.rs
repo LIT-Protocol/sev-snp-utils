@@ -1,5 +1,5 @@
 pub mod get_report;
 pub mod report;
 pub mod certs;
-mod snp;
+mod get_report_types;
 pub mod verify;
