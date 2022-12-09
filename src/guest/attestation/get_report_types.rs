@@ -10,6 +10,7 @@ pub const SNP_REPORT_USER_DATA_MAX_BYTES: usize = 64;
 pub const SNP_REPORT_MSG_RESP_RESERVED_BYTES: usize = 0x20 - 0x8;
 pub const SNP_REPORT_REQ_RESERVED_BYTES: usize = 28;
 pub const SNP_REPORT_RESP_DATA_BYTES: usize = 4000;
+pub const SNP_REPORT_RESP_HEADER_BYTES: usize = 0x20;
 
 #[repr(C)]
 #[derive(Debug)]

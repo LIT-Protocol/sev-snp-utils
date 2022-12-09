@@ -6,42 +6,42 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use log::debug;
 
 use crate::common::binary::read_exact_to_bin_vec;
-use crate::guest::attestation::get_report_types::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestIOCTL, SEV_GUEST_DEVICE, snp_get_report};
+use crate::guest::attestation::get_report_types::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestIOCTL, SEV_GUEST_DEVICE, snp_get_report, SNP_REPORT_RESP_HEADER_BYTES};
 use crate::{error, AttestationReport};
 use crate::error::Result as Result;
 
 use super::get_report_types::SNP_REPORT_MSG_RESP_RESERVED_BYTES;
 
 #[derive(Debug)]
-pub struct GetAttestationReportMsgResp {
+pub struct RequestAttestationReportMsgHeader {
     pub status: u32,
     pub report_size: u32,
     pub reserved: [u8; SNP_REPORT_MSG_RESP_RESERVED_BYTES],
-    pub attestation_report: AttestationReport,
 }
 
-impl GetAttestationReportMsgResp {
+impl RequestAttestationReportMsgHeader {
     pub fn from_reader(mut rdr: impl Read + Seek) -> Result<Self> {
         let status = rdr.read_u32::<LittleEndian>()
             .map_err(error::map_io_err)?;
         let report_size = rdr.read_u32::<LittleEndian>()
             .map_err(error::map_io_err)?;
         let reserved = read_exact_to_bin_vec(&mut rdr, SNP_REPORT_MSG_RESP_RESERVED_BYTES)?;
-        let attestation_report = AttestationReport::from_reader(rdr)?;
 
-        Ok(GetAttestationReportMsgResp {
+        Ok(RequestAttestationReportMsgHeader {
             status,
             report_size,
             reserved: reserved.as_slice().try_into().map_err(error::map_conversion_err)?,
-            attestation_report,
         })
     }
 }
 
-pub struct SNPAttestationReportGetter {}
+pub trait Requester {
+    fn request_raw(data: &[u8]) -> Result<Vec<u8>>;
+    fn request(data: &[u8]) -> Result<AttestationReport>;
+}
 
-impl SNPAttestationReportGetter {
-    pub fn get(data: &[u8]) -> Result<AttestationReport> {
+impl Requester for AttestationReport {
+    fn request_raw(data: &[u8]) -> Result<Vec<u8>> {
         // Validity checks.
         if data.len() > SNP_REPORT_USER_DATA_MAX_BYTES {
             return Err(error::Error::new_msg(error::Kind::Validation, Some("Too many bytes of data provided.".into())));
@@ -63,16 +63,24 @@ impl SNPAttestationReportGetter {
                 return Err(error::Error::new_msg(error::Kind::Io, Some(format!("Firmware error: {}", snp_guest_request_ioctl.fw_err))));
             }
         }
-        debug!("Retrieved guest report: {:?}", snp_guest_request_ioctl);
-        
+        debug!("Received IOCTL response: {:?}", snp_guest_request_ioctl);
+
         // Check that the report was successfully generated.
-        let snp_report_msg = GetAttestationReportMsgResp::from_reader(Cursor::new(snp_guest_request_ioctl.resp_data.data))?;
-        debug!("SNP Report Message: {:?}", snp_report_msg);
-        if snp_report_msg.status != 0 {
-            return Err(error::Error::new_msg(error::Kind::Io, Some(format!("Non-zero status code {:?} with the following firmware error {:?}", snp_report_msg.status, snp_guest_request_ioctl.fw_err))));
+        let mut report_msg_bytes = snp_guest_request_ioctl.resp_data.data.to_vec();
+        let report_msg_header_bytes = report_msg_bytes.drain(0..SNP_REPORT_RESP_HEADER_BYTES);
+        let report_msg_header_rdr = Cursor::new(report_msg_header_bytes);
+        let report_msg_header = RequestAttestationReportMsgHeader::from_reader(report_msg_header_rdr)?;
+        debug!("Report Message Header: {:?}", report_msg_header);
+        if report_msg_header.status != 0 {
+            return Err(error::Error::new_msg(error::Kind::Io, Some(format!("Non-zero status code {:?} with the following firmware error {:?}", report_msg_header.status, snp_guest_request_ioctl.fw_err))));
         }
 
-        Ok(snp_report_msg.attestation_report)
+        Ok(report_msg_bytes)
+    }
+
+    fn request(data: &[u8]) -> Result<AttestationReport> {
+        let attestation_report_bytes = Self::request_raw(data)?;
+        Ok(AttestationReport::from_reader(Cursor::new(attestation_report_bytes))?)
     }
 }
 
@@ -82,14 +90,14 @@ mod tests {
 
     use crate::guest::attestation::get_report::SNP_REPORT_MSG_RESP_RESERVED_BYTES;
 
-    use super::GetAttestationReportMsgResp;
+    use super::RequestAttestationReportMsgHeader;
 
     const TEST_MSG_RESP_BIN: &str = "resources/test/snp_report_msg_resp.bin";
 
     #[test]
     fn test_snp_report_msg_resp_from_reader() {
         let file_data = fs::read(TEST_MSG_RESP_BIN).unwrap();
-        let snp_report_msg_resp = GetAttestationReportMsgResp::from_reader(Cursor::new(file_data)).unwrap();
+        let snp_report_msg_resp = RequestAttestationReportMsgHeader::from_reader(Cursor::new(file_data)).unwrap();
         
         assert_eq!(snp_report_msg_resp.status, 0);
         assert_eq!(snp_report_msg_resp.report_size, 1184);
