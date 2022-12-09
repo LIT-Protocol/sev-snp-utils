@@ -44,7 +44,7 @@ impl SNPAttestationReportGetter {
     pub fn get(data: &[u8]) -> Result<AttestationReport> {
         // Validity checks.
         if data.len() > SNP_REPORT_USER_DATA_MAX_BYTES {
-            return Err(error::Error::new_msg(error::Kind::InputValidation, Some("Too many bytes of data provided.".into())));
+            return Err(error::Error::new_msg(error::Kind::Validation, Some("Too many bytes of data provided.".into())));
         }
 
         // Initialize data structures.
