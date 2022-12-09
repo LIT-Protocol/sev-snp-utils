@@ -69,6 +69,7 @@ impl fmt::Debug for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.inner.kind {
+            Kind::InputValidation => f.write_str("input validation error")?,
             Kind::Fetch => f.write_str("fetch error")?,
             Kind::Io => f.write_str("io error")?,
             Kind::Cert => f.write_str("cert error")?,
@@ -94,6 +95,7 @@ impl StdError for Error {
 
 #[derive(Debug)]
 pub(crate) enum Kind {
+    InputValidation,
     Fetch,
     Io,
     Cert,
