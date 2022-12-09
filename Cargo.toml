@@ -11,6 +11,7 @@ libc = { version = "0.2.134" }
 async-std = { version = "1.12.0" }
 async-trait = { version = "0.1.57" }
 byteorder = { version = "1.4.3" }
+nix = { version = "0.26.1" }
 sha2 = { version = "0.10.6" }
 cached = { version = "0.40.0" }
 reqwest = { version = "0.11.12" }

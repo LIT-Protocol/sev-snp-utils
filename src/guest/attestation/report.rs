@@ -84,6 +84,7 @@ struct attestation_report {
  */
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct TcbVersion {
     pub boot_loader: u8,
     pub tee: u8,
@@ -127,6 +128,7 @@ impl TcbVersion {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct BuildVersion {
     pub build: u8,
     pub minor: u8,
@@ -156,6 +158,7 @@ impl BuildVersion {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct Signature {
     pub r: Vec<u8>,
     pub s: Vec<u8>,
@@ -190,6 +193,7 @@ impl Signature {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct AttestationReport {
     pub body: Vec<u8>,
     pub version: u32,
@@ -242,6 +246,11 @@ impl AttestationReport {
     }
 
     pub fn from_reader(mut rdr: impl Read + Seek) -> Result<Self> {
+        // Take note of reader position.
+        let reader_initial_pos = rdr.stream_position()
+            .map_err(error::map_io_err)?;
+
+        // Start parsing.
         let version = rdr.read_u32::<LittleEndian>()
             .map_err(error::map_io_err)?;
         let guest_svn = rdr.read_u32::<LittleEndian>()
@@ -281,10 +290,11 @@ impl AttestationReport {
             .map_err(error::map_io_err)?;
         let signature = Signature::from_reader(&mut rdr)?;
 
-        // Rewind and read body (without signature)
-        let mut body = vec![0;signature_pos as usize];
+        // Rewind to initial reader position and read body (without signature)
+        let body_byte_len = signature_pos - reader_initial_pos;
+        let mut body = vec![0;body_byte_len as usize];
 
-        rdr.seek(SeekFrom::Start(0))
+        rdr.seek(SeekFrom::Start(reader_initial_pos))
             .map_err(error::map_io_err)?;
         rdr.read(&mut body)
             .map_err(error::map_io_err)?;
