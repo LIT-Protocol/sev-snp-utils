@@ -5,7 +5,7 @@ use std::os::fd::AsRawFd;
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::debug;
 
-use crate::common::binary::{read_exact_to_bin_vec, copy_to_fixed_size_byte_array};
+use crate::common::binary::read_exact_to_bin_vec;
 use crate::guest::attestation::get_report_types::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestIOCTL, SEV_GUEST_DEVICE, snp_get_report};
 use crate::{error, AttestationReport};
 use crate::error::Result as Result;
@@ -32,7 +32,7 @@ impl SNPReportMsgResp {
         Ok(SNPReportMsgResp {
             status,
             report_size,
-            reserved: copy_to_fixed_size_byte_array::<SNP_REPORT_MSG_RESP_RESERVED_BYTES>(reserved.as_slice()),
+            reserved: reserved.as_slice().try_into().map_err(error::map_conversion_err)?,
             attestation_report,
         })
     }
@@ -48,7 +48,7 @@ impl SNPAttestationReportGetter {
         }
 
         // Initialize data structures.
-        let mut snp_guest_request_ioctl = SNPGuestRequestIOCTL::new_with_user_data(copy_to_fixed_size_byte_array::<SNP_REPORT_USER_DATA_MAX_BYTES>(data));
+        let mut snp_guest_request_ioctl = SNPGuestRequestIOCTL::new_with_user_data(data.try_into().map_err(error::map_conversion_err)?);
     
         // Open the /dev/sev-guest device.
         let fd = File::options().read(true).write(true).open(SEV_GUEST_DEVICE)

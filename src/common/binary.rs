@@ -30,13 +30,3 @@ pub (crate) fn bin_vec_reverse_bytes(vec: &Vec<u8>) -> Vec<u8> {
     res.reverse();
     res
 }
-
-pub (crate) fn copy_to_fixed_size_byte_array<const N: usize>(byte_array: &[u8]) -> [u8; N] {
-    let mut ret: [u8; N] = [0; N];
-
-    for (idx, b) in byte_array.iter().enumerate() {
-        ret[idx] = *b;
-    }
-
-    ret
-}

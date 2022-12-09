@@ -69,6 +69,7 @@ impl fmt::Debug for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.inner.kind {
+            Kind::Conversion => f.write_str("conversion error")?,
             Kind::Validation => f.write_str("validation error")?,
             Kind::Fetch => f.write_str("fetch error")?,
             Kind::Io => f.write_str("io error")?,
@@ -95,6 +96,7 @@ impl StdError for Error {
 
 #[derive(Debug)]
 pub(crate) enum Kind {
+    Conversion,
     Validation,
     Fetch,
     Io,
@@ -102,6 +104,10 @@ pub(crate) enum Kind {
 }
 
 // constructors
+
+pub(crate) fn conversion<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
+    Error::new(Kind::Conversion, msg, Some(e))
+}
 
 pub(crate) fn fetch<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
     Error::new(Kind::Fetch, msg, Some(e))
@@ -119,3 +125,6 @@ pub(crate) fn cert(msg: Option<String>) -> Error {
     Error::new_msg(Kind::Cert, msg)
 }
 
+pub(crate) fn map_conversion_err<E: Into<BoxError>>(e: E) -> Error {
+    conversion(e, None)
+}
