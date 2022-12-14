@@ -10,6 +10,7 @@ pub use guest::attestation::report::{
 pub use guest::attestation::verify::{
     Verification, Policy
 };
+pub use guest::attestation::get_report::Requester;
 pub use guest::attestation::certs::{
     KdsCertificates, CertFormat,
     get_kds_ark_ask_certs_bytes, get_kds_ark_ask_certs, get_kds_ark_ask_certs_and_validate,
