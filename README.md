@@ -21,9 +21,30 @@ make test
 
 ### Report
 
+#### Request
+
+To request a report from the SEV-SNP capable CPU (the same functionality as `sev-guest-get-report`):
+
+```rust
+use sev_snp_utils::{AttestationReport, Requester};
+
+fn main() {
+    let report = AttestationReport::request()
+        .expect("failed to request guest report");
+
+    println!("version: {:?}", report.version);
+    
+    // Or raw bytes
+    let report_bytes = AttestationReport::request_raw()
+        .expect("failed to request guest report");
+
+    println!("bytes len: {:?}", report_bytes.len());
+}
+```
+
 #### Parsing
 
-Parse a guest_report.bin file:
+Parse a guest_report.bin file from `sev-guest-get-report` (or one saved from `AttestationReport::request_raw()`):
 
 ```rust
 use sev_snp_utils::AttestationReport;
