@@ -23,7 +23,7 @@ make test
 
 #### Request
 
-To request a report from the SEV-SNP capable CPU (the same functionality as `sev-guest-get-report`):
+To request a report from a SEV-SNP capable CPU (the same functionality as `sev-guest-get-report`):
 
 ```rust
 use sev_snp_utils::{AttestationReport, Requester};
