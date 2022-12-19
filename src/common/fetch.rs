@@ -6,18 +6,21 @@ use async_std::io::WriteExt;
 use async_std::path::PathBuf;
 use bytes::Bytes;
 use log::debug;
+use reqwest::Client;
 
 use crate::common::cache::cache_file_path;
 use crate::error;
 
 pub async fn fetch_url(url: &str,
                        attempts: u8, retry_sleep_ms: u64) -> error::Result<Option<Bytes>> {
+    let client = create_http_client()?;
+
     let mut body: Option<Bytes> = None;
     for attempt in 0..attempts {
         let is_last = attempt >= attempts - 1;
         let mut err_msg: String;
 
-        match reqwest::get(url).await {
+        match client.get(url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     err_msg = format!("failed to read bytes during fetch: {}", &url);
@@ -82,4 +85,23 @@ async fn read_cached_file(full_path: PathBuf) -> error::Result<Bytes> {
         Err(e) => Err(crate::error::io(e, Some(format!("failed to read cached file: {}",
                                                        full_path.to_str().unwrap()))))
     }
+}
+
+#[cfg(feature = "trust-dns")]
+fn create_http_client() -> error::Result<Client> {
+    let mut client = Client::builder();
+    client = client.trust_dns(true);
+
+    let client = client.build()
+        .map_err(|e| error::fetch(e, Some("failed to construct reqwest client".into())))?;
+
+    Ok(client)
+}
+
+#[cfg(not(feature = "trust-dns"))]
+fn create_http_client() -> error::Result<Client> {
+    let client = Client::builder().build()
+        .map_err(|e| error::fetch(e, Some("failed to construct reqwest client".into())))?;
+
+    Ok(client)
 }
