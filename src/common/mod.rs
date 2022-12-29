@@ -5,3 +5,4 @@ pub mod env;
 pub mod file;
 pub mod cert;
 pub mod pem;
+pub mod hash;
