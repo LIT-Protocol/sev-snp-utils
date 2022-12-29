@@ -13,9 +13,7 @@ const EXPECTED_METADATA_SIG: &[u8] = b"ASEV";
 
 const FOUR_GB: u64 = 0x100000000;
 const OVMF_TABLE_FOOTER_GUID: &'static str = "96b582de-1fb2-45f7-baea-a366c55a082d";
-#[allow(dead_code)]
 const SEV_HASH_TABLE_RV_GUID: &'static str = "7255371f-3a3b-4b04-927b-1da6efa8d454";
-#[allow(dead_code)]
 const SEV_ES_RESET_BLOCK_GUID: &'static str = "00f771de-1a7e-4fcb-890e-68c77e2fb44e";
 const OVMF_SEV_META_DATA_GUID: &'static str = "dc886566-984a-4798-a75e-5585a7bf67cc";
 
@@ -192,6 +190,37 @@ impl OVMF {
         &self.metadata_items
     }
 
+    pub fn sev_hashes_table_gpa(&self) -> Result<i32> {
+        match self.table_item(SEV_HASH_TABLE_RV_GUID) {
+            Some(entry) => {
+                let val: [u8; 4] = entry[..4]
+                    .try_into()
+                    .map_err(|e| conversion(e, None))?;
+                let val: i32 = i32::from_le_bytes(val);
+
+                Ok(val)
+            }
+            None => {
+                return Err(validation("OVMF SEV metadata: missing table guid 'SEV_HASH_TABLE_RV_GUID'", None));
+            }
+        }
+    }
+
+    pub fn sev_es_reset_eip(&self) -> Result<i32> {
+        match self.table_item(SEV_ES_RESET_BLOCK_GUID) {
+            Some(entry) => {
+                let val: [u8; 4] = entry[..4]
+                    .try_into()
+                    .map_err(|e| conversion(e, None))?;
+                let val: i32 = i32::from_le_bytes(val);
+
+                Ok(val)
+            }
+            None => {
+                return Err(validation("OVMF SEV metadata: missing table guid 'SEV_ES_RESET_BLOCK_GUID'", None));
+            }
+        }
+    }
 
     // Parsing
 
@@ -357,5 +386,11 @@ mod tests {
                 }
             }
         }
+
+        // sev_hashes_table_gpa
+        assert_eq!(ovmf.sev_hashes_table_gpa().unwrap(), 8453120);
+
+        // sev_es_reset_eip
+        assert_eq!(ovmf.sev_es_reset_eip().unwrap(), 8433668);
     }
 }
