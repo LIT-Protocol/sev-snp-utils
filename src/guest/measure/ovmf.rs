@@ -207,15 +207,18 @@ impl OVMF {
         }
     }
 
-    pub fn sev_es_reset_eip(&self) -> Result<i32> {
+    pub fn sev_es_reset_eip(&self) -> Result<u64> {
         match self.table_item(SEV_ES_RESET_BLOCK_GUID) {
             Some(entry) => {
                 let val: [u8; 4] = entry[..4]
                     .try_into()
                     .map_err(|e| conversion(e, None))?;
                 let val: i32 = i32::from_le_bytes(val);
+                if val < 0 {
+                    return Err(validation("sev_es_reset_eip < 0", None));
+                }
 
-                Ok(val)
+                Ok(val as u64)
             }
             None => {
                 return Err(validation("OVMF SEV metadata: missing table guid 'SEV_ES_RESET_BLOCK_GUID'", None));
