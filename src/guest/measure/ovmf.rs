@@ -7,6 +7,7 @@ use libc::{c_uchar, c_uint};
 use uuid::{Bytes, Uuid};
 
 use crate::common::binary::{fmt_slice_vec_to_hex};
+use crate::common::guid::guid_le_to_slice;
 use crate::error::{conversion, io, Result, validation};
 
 const EXPECTED_METADATA_SIG: &[u8] = b"ASEV";
@@ -229,7 +230,7 @@ impl OVMF {
         let len = self.data.len();
 
         let footer_guid = &self.data[len-48..len-32];
-        let expected_footer_guid = guid_to_slice(OVMF_TABLE_FOOTER_GUID)?;
+        let expected_footer_guid = guid_le_to_slice(OVMF_TABLE_FOOTER_GUID)?;
         if !footer_guid.eq(&expected_footer_guid) {
             return Err(validation(format!("OVMF table footer GUID does not match ({} vs {})",
                                           fmt_slice_vec_to_hex(&expected_footer_guid),
@@ -306,16 +307,6 @@ impl OVMF {
 
         Ok(())
     }
-}
-
-fn guid_to_slice(guid: &str) -> Result<[u8; 16]> {
-    let guid = Uuid::try_from(guid)
-        .map_err(|e| conversion(e, None))?;
-    let guid = guid.to_bytes_le();
-    let guid = guid.as_slice();
-
-    guid.try_into()
-        .map_err(|e| conversion(e, None))
 }
 
 #[cfg(test)]
