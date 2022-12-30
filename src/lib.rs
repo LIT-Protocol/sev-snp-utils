@@ -17,3 +17,6 @@ pub use guest::attestation::certs::{
     validate_ark_ask_vcek_certs,
     PRODUCT_NAME_MILAN
 };
+pub use guest::measure::calc_launch_digest;
+pub use guest::measure::types::SevMode;
+pub use guest::measure::vcpu_types::CpuType;
