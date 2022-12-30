@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use bytemuck::{Pod, try_from_bytes, Zeroable};
 
-use libc::c_uint;
+use libc::{c_uchar, c_uint};
 use uuid::{Bytes, Uuid};
 
 use crate::common::binary::{fmt_slice_vec_to_hex};
@@ -86,7 +86,7 @@ unsafe impl Pod for OvmfSevMetadataSectionDesc {
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct OvmfSevMetadataHeader {
-    signature: [u8; 4],
+    signature: [c_uchar; 4],
     size: c_uint,
     version: c_uint,
     num_items: c_uint,
