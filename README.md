@@ -158,3 +158,30 @@ async fn get_certs() {
         .expect("failed to validate certs");
 }
 ```
+
+## Measurement
+
+### Calculating launch digest
+
+```rust
+use std::fs;
+use std::path::PathBuf;
+use sev_snp_utils::{
+    calc_launch_digest, SevMode, CpuType
+};
+
+fn main() {
+    let ovmf_path = PathBuf::from("./OVMF_CODE.fd");
+    let kernel_path = PathBuf::from("./vmlinuz");
+    let append_path = PathBuf::from("./vmlinuz.cmdline");
+    let initrd_path = PathBuf::from("./initrd.img");
+
+    let append = fs::read_to_string(&append_path)
+        .expect(format!("failed to read '{:?}'", &append_path).as_str());
+    
+    let digest = calc_launch_digest(SevMode::SevSnp, 64, ovmf_path.as_path(),
+                                    Some(kernel_path.as_path()), Some(initrd_path.as_path()), 
+                                    Some(append.as_str()))
+        .expect("failed to calculate launch digest");
+}
+```

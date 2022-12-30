@@ -1,3 +1,6 @@
+/// This feature has been ported from: https://github.com/IBM/sev-snp-measure
+/// full credit goes to the original authors.
+
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
@@ -139,8 +142,8 @@ mod tests {
         let append_path = get_test_path("vmlinuz.cmdline");
         let initrd_path = get_test_path("initrd.img");
 
-        let append = fs::read_to_string(append_path)
-            .expect("failed to read 'vmlinuz.cmdline'");
+        let append = fs::read_to_string(&append_path)
+            .expect(format!("failed to read '{:?}'", &append_path).as_str());
 
         for (
             name, mode, vcpus, vcpu_type,
