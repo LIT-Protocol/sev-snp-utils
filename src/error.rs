@@ -109,6 +109,10 @@ pub(crate) fn conversion<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error 
     Error::new(Kind::Conversion, msg, Some(e))
 }
 
+pub(crate) fn validation<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
+    Error::new(Kind::Validation, msg, Some(e))
+}
+
 pub(crate) fn fetch<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
     Error::new(Kind::Fetch, msg, Some(e))
 }

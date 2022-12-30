@@ -11,6 +11,13 @@ pub (crate) fn read_exact_to_bin_vec(rdr: &mut impl Read, len: usize) -> Result<
     Ok(vec)
 }
 
+pub (crate) fn fmt_slice_vec_to_hex(vec: &[u8]) -> String {
+    vec
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
+}
+
 pub (crate) fn fmt_bin_vec_to_hex(vec: &Vec<u8>) -> String {
     vec
         .iter()
