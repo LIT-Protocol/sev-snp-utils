@@ -6,6 +6,7 @@ use std::path::Path;
 use sha2::{Digest, Sha256};
 
 use crate::error::Result;
+use crate::guest::identity::LaunchDigest;
 use crate::guest::measure::gctx::GCTX;
 use crate::guest::measure::ovmf::{OVMF, SectionType};
 use crate::guest::measure::sev_hashes::SevHashes;
@@ -34,8 +35,10 @@ pub fn calc_launch_digest(mode: SevMode,
                                                kernel_path, initrd_path, append),
         SevMode::SevEs => seves_calc_launch_digest(vcpus, vcpu_type, ovmf_path,
                                                    kernel_path, initrd_path, append),
-        SevMode::SevSnp => snp_calc_launch_digest(vcpus, vcpu_type, ovmf_path,
-                                                  kernel_path, initrd_path, append),
+        SevMode::SevSnp => Ok(
+            snp_calc_launch_digest(vcpus, vcpu_type, ovmf_path,
+                                                  kernel_path, initrd_path, append)?.to_vec()
+        ),
     }
 }
 
@@ -54,12 +57,12 @@ pub(crate) fn snp_update_metadata_pages(gctx: &mut GCTX, ovmf: &OVMF) -> Result<
     Ok(())
 }
 
-pub(crate) fn snp_calc_launch_digest(vcpus: usize,
+pub fn snp_calc_launch_digest(vcpus: usize,
                                      vcpu_type: CpuType,
                                      ovmf_path: &Path,
                                      kernel_path: Option<&Path>,
                                      initrd_path: Option<&Path>,
-                                     append: Option<&str>) -> Result<Vec<u8>> {
+                                     append: Option<&str>) -> Result<LaunchDigest> {
     let ovmf = OVMF::from_path(ovmf_path)?;
 
     let mut gctx = GCTX::new();
@@ -82,7 +85,7 @@ pub(crate) fn snp_calc_launch_digest(vcpus: usize,
         gctx.update_vmsa_page(&page[..])?;
     }
 
-    Ok(gctx.ld().to_vec())
+    Ok(gctx.take_ld())
 }
 
 pub(crate) fn seves_calc_launch_digest(vcpus: usize,

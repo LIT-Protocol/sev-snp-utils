@@ -24,6 +24,10 @@ impl GCTX {
         &self.ld
     }
 
+    pub fn take_ld(self) -> LaunchDigest {
+        self.ld
+    }
+
     pub fn hex_ld(&self) -> String {
         fmt_slice_vec_to_hex(self.ld().0.as_slice())
     }
