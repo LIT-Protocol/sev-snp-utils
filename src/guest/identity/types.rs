@@ -1,7 +1,9 @@
+use std::io::Read;
 use bytemuck::{Pod, Zeroable};
 use libc::{c_uchar, c_uint, c_ulonglong};
+use once_cell::sync::Lazy;
 
-use crate::error::{conversion, Result};
+use crate::error::{conversion, map_io_err, Result, validation};
 
 pub(crate) const ID_BLK_DIGEST_BITS: usize = 384;
 pub(crate) const ID_BLK_DIGEST_BYTES: usize = ID_BLK_DIGEST_BITS / 8;
@@ -25,13 +27,24 @@ const ECDSA_SIG_RSVD_SIZE: usize = 0x1ff - 0x90 + 1;
 const ECDSA_PUBKEY_SIZE: usize = 0x404;
 const ECDSA_SIG_SIZE: usize = 0x200;
 
+pub(crate) static LD_ZEROED: Lazy<LaunchDigest> = Lazy::new(||
+    LaunchDigest::zeroed());
+
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy)]
-pub struct LaunchDigest(pub(crate) [c_uchar; ID_BLK_DIGEST_BYTES]);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LaunchDigest(pub [c_uchar; ID_BLK_DIGEST_BYTES]);
 
 impl LaunchDigest {
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_vec().into()
+    }
+
+    pub fn from_reader(mut rdr: impl Read) -> Result<Self> {
+        let mut us = LaunchDigest::zeroed();
+        rdr.read_exact(&mut us.0)
+            .map_err(map_io_err)?;
+
+        Ok(us)
     }
 }
 
@@ -39,6 +52,11 @@ impl TryFrom<&[u8]> for LaunchDigest {
     type Error = crate::error::Error;
 
     fn try_from(value: &[u8]) -> Result<Self> {
+        if value.len() != ID_BLK_DIGEST_BYTES {
+            return Err(validation(format!("value is not correct length for LaunchDigest ({} vs {})",
+                                          value.len(), ID_BLK_DIGEST_BYTES), None));
+        }
+
         let value: [u8; ID_BLK_DIGEST_BYTES] = value[..ID_BLK_DIGEST_BYTES]
             .try_into()
             .map_err(|e| conversion(e, None))?;
@@ -52,13 +70,32 @@ unsafe impl Zeroable for LaunchDigest {}
 unsafe impl Pod for LaunchDigest {}
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy)]
-pub struct FamilyId(pub(crate) [c_uchar; ID_BLK_FAMILY_ID_BYTES]);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FamilyId(pub [c_uchar; ID_BLK_FAMILY_ID_BYTES]);
+
+impl FamilyId {
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.to_vec().into()
+    }
+
+    pub fn from_reader(mut rdr: impl Read) -> Result<Self> {
+        let mut us = FamilyId::zeroed();
+        rdr.read_exact(&mut us.0)
+            .map_err(map_io_err)?;
+
+        Ok(us)
+    }
+}
 
 impl TryFrom<&[u8]> for FamilyId {
     type Error = crate::error::Error;
 
     fn try_from(value: &[u8]) -> Result<Self> {
+        if value.len() != ID_BLK_FAMILY_ID_BYTES {
+            return Err(validation(format!("value is not correct length for FamilyId ({} vs {})",
+                                          value.len(), ID_BLK_FAMILY_ID_BYTES), None));
+        }
+
         let value: [u8; ID_BLK_FAMILY_ID_BYTES] = value[..ID_BLK_FAMILY_ID_BYTES]
             .try_into()
             .map_err(|e| conversion(e, None))?;
@@ -72,13 +109,32 @@ unsafe impl Zeroable for FamilyId {}
 unsafe impl Pod for FamilyId {}
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy)]
-pub struct ImageId(pub(crate) [c_uchar; ID_BLK_IMAGE_ID_BYTES]);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImageId(pub [c_uchar; ID_BLK_IMAGE_ID_BYTES]);
+
+impl ImageId {
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.to_vec().into()
+    }
+
+    pub fn from_reader(mut rdr: impl Read) -> Result<Self> {
+        let mut us = ImageId::zeroed();
+        rdr.read_exact(&mut us.0)
+            .map_err(map_io_err)?;
+
+        Ok(us)
+    }
+}
 
 impl TryFrom<&[u8]> for ImageId {
     type Error = crate::error::Error;
 
     fn try_from(value: &[u8]) -> Result<Self> {
+        if value.len() != ID_BLK_IMAGE_ID_BYTES {
+            return Err(validation(format!("value is not correct length for ImageId ({} vs {})",
+                                          value.len(), ID_BLK_IMAGE_ID_BYTES), None));
+        }
+
         let value: [u8; ID_BLK_IMAGE_ID_BYTES] = value[..ID_BLK_IMAGE_ID_BYTES]
             .try_into()
             .map_err(|e| conversion(e, None))?;

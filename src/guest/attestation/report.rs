@@ -9,10 +9,11 @@ use openssl::error::ErrorStack;
 use sha2::{Digest, Sha256, Sha384};
 use sha2::digest::Output;
 
-use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, read_exact_to_bin_vec};
+use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, fmt_slice_vec_to_hex, read_exact_to_bin_vec};
 use crate::common::cert::ecdsa_sig;
 use crate::error;
 use crate::error::Result as Result;
+use crate::guest::identity::{FamilyId, ImageId, LaunchDigest};
 
 const REPORT_LAST_POSITION: u64 = 960; // End of signature.
 
@@ -199,8 +200,8 @@ pub struct AttestationReport {
     pub version: u32,
     pub guest_svn: u32,
     pub policy: u64,
-    pub family_id: Vec<u8>,
-    pub image_id: Vec<u8>,
+    pub family_id: FamilyId,
+    pub image_id: ImageId,
     pub vmpl: u32,
     pub signature_algo: u32,
     pub platform_version: TcbVersion,
@@ -208,7 +209,7 @@ pub struct AttestationReport {
     pub flags: u32,
     reserved0: u32,
     pub report_data: Vec<u8>,
-    pub measurement: Vec<u8>,
+    pub measurement: LaunchDigest,
     pub host_data: Vec<u8>,
     pub id_key_digest: Vec<u8>,
     pub author_key_digest: Vec<u8>,
@@ -257,8 +258,8 @@ impl AttestationReport {
             .map_err(error::map_io_err)?;
         let policy = rdr.read_u64::<LittleEndian>()
             .map_err(error::map_io_err)?;
-        let family_id = read_exact_to_bin_vec(&mut rdr, 16)?;
-        let image_id = read_exact_to_bin_vec(&mut rdr, 16)?;
+        let family_id = FamilyId::from_reader(&mut rdr)?;
+        let image_id = ImageId::from_reader(&mut rdr)?;
         let vmpl = rdr.read_u32::<LittleEndian>()
             .map_err(error::map_io_err)?;
         let signature_algo = rdr.read_u32::<LittleEndian>()
@@ -271,7 +272,7 @@ impl AttestationReport {
         let reserved0 = rdr.read_u32::<LittleEndian>()
             .map_err(error::map_io_err)?;
         let report_data = read_exact_to_bin_vec(&mut rdr, 64)?;
-        let measurement = read_exact_to_bin_vec(&mut rdr, 48)?;
+        let measurement = LaunchDigest::from_reader(&mut rdr)?;
         let host_data = read_exact_to_bin_vec(&mut rdr, 32)?;
         let id_key_digest = read_exact_to_bin_vec(&mut rdr, 48)?;
         let author_key_digest = read_exact_to_bin_vec(&mut rdr, 48)?;
@@ -371,6 +372,14 @@ impl AttestationReport {
         (self.policy & POLICY_ABI_MINOR_MASK) >> POLICY_ABI_MINOR_SHIFT
     }
 
+    pub fn family_id_hex(&self) -> String {
+        fmt_slice_vec_to_hex(&self.family_id.0)
+    }
+
+    pub fn image_id_hex(&self) -> String {
+        fmt_slice_vec_to_hex(&self.image_id.0)
+    }
+
     pub fn signature_algo_is_ecdsa_p384_sha384(&self) -> bool {
         self.signature_algo == SIG_ALGO_ECDSA_P384_SHA384
     }
@@ -388,7 +397,7 @@ impl AttestationReport {
     }
 
     pub fn measurement_hex(&self) -> String {
-        fmt_bin_vec_to_hex(self.measurement.as_ref())
+        fmt_slice_vec_to_hex(&self.measurement.0)
     }
 
     pub fn report_id_hex(&self) -> String {
@@ -443,8 +452,8 @@ mod tests {
         assert_eq!(report.policy_smt_allowed(), true);
         assert_eq!(report.policy_min_abi_major(), 0);
         assert_eq!(report.policy_min_abi_minor(), 0);
-        assert_eq!(report.family_id, vec![0; 16]);
-        assert_eq!(report.image_id, vec![0; 16]);
+        assert_eq!(report.family_id_hex(), "00000000000000000000000000000000");
+        assert_eq!(report.image_id_hex(), "00000000000000000000000000000000");
         assert_eq!(report.vmpl, 0);
         assert_eq!(report.signature_algo, 1);
         assert_eq!(report.signature_algo_is_ecdsa_p384_sha384(), true);

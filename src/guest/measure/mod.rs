@@ -37,7 +37,7 @@ pub fn calc_launch_digest(mode: SevMode,
                                                    kernel_path, initrd_path, append),
         SevMode::SevSnp => Ok(
             snp_calc_launch_digest(vcpus, vcpu_type, ovmf_path,
-                                                  kernel_path, initrd_path, append)?.to_vec()
+                                   kernel_path, initrd_path, append)?.to_vec()
         ),
     }
 }
@@ -58,11 +58,11 @@ pub(crate) fn snp_update_metadata_pages(gctx: &mut GCTX, ovmf: &OVMF) -> Result<
 }
 
 pub fn snp_calc_launch_digest(vcpus: usize,
-                                     vcpu_type: CpuType,
-                                     ovmf_path: &Path,
-                                     kernel_path: Option<&Path>,
-                                     initrd_path: Option<&Path>,
-                                     append: Option<&str>) -> Result<LaunchDigest> {
+                              vcpu_type: CpuType,
+                              ovmf_path: &Path,
+                              kernel_path: Option<&Path>,
+                              initrd_path: Option<&Path>,
+                              append: Option<&str>) -> Result<LaunchDigest> {
     let ovmf = OVMF::from_path(ovmf_path)?;
 
     let mut gctx = GCTX::new();
@@ -157,36 +157,36 @@ mod tests {
                 "sev_snp_all_args", SevMode::SevSnp, 4, CpuType::EpycV4,
                 Some(kernel_path.as_path()), Some(initrd_path.as_path()), Some(append.as_str()),
                 "29da869e16a408cee99fe28adea700d51bc210a06cc2414742688000adb92534f72269ed7d3b09016014c46b05e10a15",
-            ),(
+            ), (
                 "sev_snp_all_args_milan", SevMode::SevSnp, 8, CpuType::EpycMilan,
                 Some(kernel_path.as_path()), Some(initrd_path.as_path()), Some(append.as_str()),
                 "1b4585fc9bf8cdf791e0de5cd799af7fa051fffce11c998a6001f440e302c1c89d5b845d931976ff9c28adf41d528454",
-            ),(
+            ), (
                 "sev_snp_no_initrd", SevMode::SevSnp, 4, CpuType::EpycV4,
                 Some(kernel_path.as_path()), None, Some(append.as_str()),
                 "63df03ed0226738ab2149496123e9f0cd18e83c8caf935a8a7b99d553dbfd144b1d209440299b042625680ce2134e237",
-            ),(
+            ), (
                 "sev_snp_no_append", SevMode::SevSnp, 4, CpuType::EpycV4,
                 Some(kernel_path.as_path()), Some(initrd_path.as_path()), None,
                 "4c066bf73f08697ede6a0a96b6d6e57598f60c4e2615c28a4156dee116375ac9e278ab1c088a7b6be4b1a321ea16c4a2",
-            ),(
+            ), (
                 "sev_snp_no_optional", SevMode::SevSnp, 4, CpuType::EpycV4,
                 None, None, None,
                 "09f8c50bf2400536dd4d9c4b66a87843cf2a37174db035ac2cb48929731ffca9d0a132aff4a5729f61a4fbf7f70df2af",
-            ),(
+            ), (
                 "sev_es_all_args", SevMode::SevEs, 8, CpuType::EpycRome,
                 Some(kernel_path.as_path()), Some(initrd_path.as_path()), Some(append.as_str()),
                 "35cd6f65cb2e5f2a14865481bdbcadab40e1de852c921a70c2566f2fba2fa134",
-            ),(
+            ), (
                 "sev_all_args", SevMode::Sev, 12, CpuType::EpycRome,
                 Some(kernel_path.as_path()), Some(initrd_path.as_path()), Some(append.as_str()),
                 "ac1fda9e754c70915051aec47ab3738ff22ccff063ebbbf047884bbb061ec0d1",
-            )
+            ),
         ] {
             println!("Running test: {}", name);
 
             let measure = calc_launch_digest(mode, vcpus, vcpu_type, ovmf_path.as_path(),
-            kp, ip, ap)
+                                             kp, ip, ap)
                 .expect("failed to call calc_launch_digest");
 
             assert_eq!(fmt_bin_vec_to_hex(&measure), exp);

@@ -2,7 +2,7 @@ use bytemuck::Zeroable;
 use crate::common::binary::fmt_slice_vec_to_hex;
 use crate::common::hash::sha384;
 use crate::error::{conversion, Result, validation};
-use crate::guest::identity::types::{ID_BLK_DIGEST_BYTES, LaunchDigest};
+use crate::guest::identity::types::{ID_BLK_DIGEST_BYTES, LaunchDigest, LD_ZEROED};
 
 pub const BLOCK_SIZE: usize = 4096;
 
@@ -113,8 +113,7 @@ impl GCTX {
 
         let mut offset = 0;
         while offset < length_bytes {
-            self.update(0x03, gpa + (offset as u64),
-                        LaunchDigest::zeroed().0.as_slice())?;
+            self.update(0x03, gpa + (offset as u64), &LD_ZEROED.0)?;
             offset += BLOCK_SIZE;
         }
 
@@ -122,22 +121,19 @@ impl GCTX {
     }
 
     pub fn update_unmeasured_page(&mut self, gpa: u64) -> Result<()> {
-        self.update(0x04,  gpa,
-                    LaunchDigest::zeroed().0.as_slice())?;
+        self.update(0x04,  gpa, &LD_ZEROED.0)?;
 
         Ok(())
     }
 
     pub fn update_secrets_page(&mut self, gpa: u64) -> Result<()> {
-        self.update(0x05,  gpa,
-                    LaunchDigest::zeroed().0.as_slice())?;
+        self.update(0x05,  gpa, &LD_ZEROED.0)?;
 
         Ok(())
     }
 
     pub fn update_cpuid_page(&mut self, gpa: u64) -> Result<()> {
-        self.update(0x06,  gpa,
-                    LaunchDigest::zeroed().0.as_slice())?;
+        self.update(0x06,  gpa, &LD_ZEROED.0)?;
 
         Ok(())
     }
