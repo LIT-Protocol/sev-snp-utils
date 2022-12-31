@@ -2,6 +2,7 @@ use std::io::Read;
 use bytemuck::{Pod, Zeroable};
 use libc::{c_uchar, c_uint, c_ulonglong};
 use once_cell::sync::Lazy;
+use crate::common::binary::fmt_slice_vec_to_hex;
 
 use crate::error::{conversion, map_io_err, Result, validation};
 
@@ -16,16 +17,14 @@ pub(crate) const ID_BLK_IMAGE_ID_BYTES: usize = ID_BLK_IMAGE_ID_BITS / 8;
 
 pub(crate) const ID_BLK_VERSION: usize = 1;
 
-const ID_AUTH_INFO_RESERVED1_BYTES: usize = 0x03F - 0x008 + 1;
-const ID_AUTH_INFO_RESERVED2_BYTES: usize = 0x67F - 0x644 + 1;
-const ID_AUTH_INFO_RESERVED3_BYTES: usize = 0xFFF - 0xC84 + 1;
+pub(crate) const ID_AUTH_INFO_RESERVED1_BYTES: usize = 0x03F - 0x008 + 1;
+pub(crate) const ID_AUTH_INFO_RESERVED2_BYTES: usize = 0x67F - 0x644 + 1;
+pub(crate) const ID_AUTH_INFO_RESERVED3_BYTES: usize = 0xFFF - 0xC84 + 1;
 
-const ECDSA_POINT_SIZE_BITS: usize = 576;
-const ECDSA_POINT_SIZE: usize = ECDSA_POINT_SIZE_BITS / 8;
-const ECDSA_PUBKEY_RSVD_SIZE: usize = 0x403 - 0x94 + 1;
-const ECDSA_SIG_RSVD_SIZE: usize = 0x1ff - 0x90 + 1;
-const ECDSA_PUBKEY_SIZE: usize = 0x404;
-const ECDSA_SIG_SIZE: usize = 0x200;
+pub(crate) const ECDSA_POINT_SIZE_BITS: usize = 576;
+pub(crate) const ECDSA_POINT_SIZE: usize = ECDSA_POINT_SIZE_BITS / 8;
+pub(crate) const ECDSA_PUBKEY_RSVD_SIZE: usize = 0x403 - 0x94 + 1;
+pub(crate) const ECDSA_SIG_RSVD_SIZE: usize = 0x1ff - 0x90 + 1;
 
 pub(crate) static LD_ZEROED: Lazy<LaunchDigest> = Lazy::new(||
     LaunchDigest::zeroed());
@@ -45,6 +44,10 @@ impl LaunchDigest {
             .map_err(map_io_err)?;
 
         Ok(us)
+    }
+
+    pub fn hex(&self) -> String {
+        fmt_slice_vec_to_hex(&self.0)
     }
 }
 
@@ -85,6 +88,10 @@ impl FamilyId {
 
         Ok(us)
     }
+
+    pub fn hex(&self) -> String {
+        fmt_slice_vec_to_hex(&self.0)
+    }
 }
 
 impl TryFrom<&[u8]> for FamilyId {
@@ -124,6 +131,10 @@ impl ImageId {
 
         Ok(us)
     }
+
+    pub fn hex(&self) -> String {
+        fmt_slice_vec_to_hex(&self.0)
+    }
 }
 
 impl TryFrom<&[u8]> for ImageId {
@@ -159,6 +170,10 @@ pub struct IdBlock {
 }
 
 impl IdBlock {
+    pub fn default() -> Self {
+        Self::zeroed()
+    }
+
     pub fn new(ld: LaunchDigest,
                family_id: FamilyId,
                image_id: ImageId,
@@ -174,6 +189,36 @@ impl IdBlock {
             policy,
         }
     }
+
+    pub fn with_ld(mut self, ld: LaunchDigest) -> Self {
+        self.ld = ld;
+        self
+    }
+
+    pub fn with_family_id(mut self, family_id: FamilyId) -> Self {
+        self.family_id = family_id;
+        self
+    }
+
+    pub fn with_image_id(mut self, image_id: ImageId) -> Self {
+        self.image_id = image_id;
+        self
+    }
+
+    pub fn with_version(mut self, version: u32) -> Self {
+        self.version = version;
+        self
+    }
+
+    pub fn with_guest_svn(mut self, guest_svn: u32) -> Self {
+        self.guest_svn = guest_svn;
+        self
+    }
+
+    pub fn with_policy(mut self, policy: u64) -> Self {
+        self.policy = policy;
+        self
+    }
 }
 
 unsafe impl Zeroable for IdBlock {}
@@ -183,70 +228,151 @@ unsafe impl Pod for IdBlock {}
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct IdAuthInfo {
-    id_key_algo: c_uint,
-    author_key_algo: c_uint,
+    pub id_key_algo: c_uint,
+    pub author_key_algo: c_uint,
     reserved1: [c_uchar; ID_AUTH_INFO_RESERVED1_BYTES],
-    id_block_sig: SevEcdsaSig,
-    id_pubkey: SevEcdsaPubKey,
+    pub id_block_sig: SevEcdsaSig,
+    pub id_pubkey: SevEcdsaPubKey,
     reserved2: [c_uchar; ID_AUTH_INFO_RESERVED2_BYTES],
-    id_key_sig: SevEcdsaSig,
-    author_pubkey: SevEcdsaPubKey,
+    pub id_key_sig: SevEcdsaSig,
+    pub author_pubkey: SevEcdsaPubKey,
     reserved3: [c_uchar; ID_AUTH_INFO_RESERVED3_BYTES],
+}
+
+unsafe impl Zeroable for IdAuthInfo {}
+unsafe impl Pod for IdAuthInfo {}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) enum SevAlgo {
+    SevAlgoInvalid = 0,
+    SevAlgoEcdsaP384Sha384 = 1,
+    SevAlgoLimit,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) enum EcdsaCurve {
+    EcdsaCurveInvalid = 0,
+    EcdsaCurveP384 = 2,
+    EcdsaCurveLimit
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub union SevEcdsaSig {
-    body: SevEcdsaSigBody,
-    bytes: [c_uchar; 2 * ECDSA_POINT_SIZE],
+    pub body: SevEcdsaSigBody,
+    pub bytes: [c_uchar; 2 * ECDSA_POINT_SIZE],
 }
 
 unsafe impl Zeroable for SevEcdsaSig {}
-
 unsafe impl Pod for SevEcdsaSig {}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SevEcdsaSigBody {
-    r: [c_uchar; ECDSA_POINT_SIZE],
-    s: [c_uchar; ECDSA_POINT_SIZE],
+    pub r: [c_uchar; ECDSA_POINT_SIZE],
+    pub s: [c_uchar; ECDSA_POINT_SIZE],
     reserved: [c_uchar; ECDSA_SIG_RSVD_SIZE],
 }
 
 unsafe impl Zeroable for SevEcdsaSigBody {}
-
 unsafe impl Pod for SevEcdsaSigBody {}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SevEcdsaPubKey {
-    curve: c_uint,
-    inner: SevEcdsaPubKeyInner,
+    pub curve: c_uint,
+    pub inner: SevEcdsaPubKeyInner,
 }
 
 unsafe impl Zeroable for SevEcdsaPubKey {}
-
 unsafe impl Pod for SevEcdsaPubKey {}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub union SevEcdsaPubKeyInner {
-    body: SevEcdsaPubKeyBody,
-    bytes: [c_uchar; 2 * ECDSA_POINT_SIZE],
+    pub body: SevEcdsaPubKeyBody,
+    pub bytes: [c_uchar; 2 * ECDSA_POINT_SIZE],
 }
 
 unsafe impl Zeroable for SevEcdsaPubKeyInner {}
-
 unsafe impl Pod for SevEcdsaPubKeyInner {}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SevEcdsaPubKeyBody {
-    qx: [c_uchar; ECDSA_POINT_SIZE],
-    qy: [c_uchar; ECDSA_POINT_SIZE],
+    pub qx: [c_uchar; ECDSA_POINT_SIZE],
+    pub qy: [c_uchar; ECDSA_POINT_SIZE],
     reserved: [c_uchar; ECDSA_PUBKEY_RSVD_SIZE],
 }
 
 unsafe impl Zeroable for SevEcdsaPubKeyBody {}
-
 unsafe impl Pod for SevEcdsaPubKeyBody {}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use bytemuck::checked::try_from_bytes;
+    use crate::common::binary::fmt_slice_vec_to_hex;
+    use crate::guest::identity::{IdAuthInfo, IdBlock};
+
+    const RESOURCES_TEST_DIR: &str = "resources/test/identity";
+
+    #[test]
+    fn id_block_test() {
+        let id_block_path = get_test_path("id_block.b64");
+        let id_block_bytes = fs::read(id_block_path.as_path())
+            .expect("failed to read: 'id_block.b64'");
+        let id_block_bytes = base64::decode(&id_block_bytes[..])
+            .expect("failed to decode: 'id_block.b64' as base64");
+
+        let id_block: &IdBlock = try_from_bytes(&id_block_bytes[..])
+            .expect("failed to decode 'id_block.b64' as an IdBlock");
+
+        assert_eq!(id_block.ld.hex(), "ffb0cb7f01a5d5b122430d66f211326ab5cf11a9a5d3189ec53adf9a60730bc63d9856fe9fe602abd662861d0ee36007");
+        assert_eq!(id_block.image_id.hex(), "00000000000000000000000000000000");
+        assert_eq!(id_block.family_id.hex(), "00000000000000000000000000000000");
+        assert_eq!(id_block.version, 1);
+        assert_eq!(id_block.guest_svn, 0);
+        assert_eq!(id_block.policy, 0x30000);
+    }
+
+    #[test]
+    fn id_auth_info_test() {
+        let id_auth_info_path = get_test_path("auth_info.b64");
+        let id_auth_info_bytes = fs::read(id_auth_info_path.as_path())
+            .expect("failed to read: 'auth_info.b64'");
+        let id_auth_info_bytes = base64::decode(&id_auth_info_bytes[..])
+            .expect("failed to decode: 'auth_info.b64' as base64");
+
+        let id_auth_info: &IdAuthInfo = try_from_bytes(&id_auth_info_bytes[..])
+            .expect("failed to decode 'auth_info.b64' as an IdBlock");
+
+        assert_eq!(id_auth_info.id_key_algo, 1);
+        assert_eq!(id_auth_info.author_key_algo, 1);
+        unsafe {
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.bytes), "776aaace68af45d6c1ceaf64523b748e42f8c171ce5f22237d40e50595870c887552f8fac0b9605bb53fc059488b2154000000000000000000000000000000000000000000000000b9fd80ad8eecb48624b919002f0a3181643c1b23edb83488d243e1d8044b5e3ba7a5c8caabf72cc551c4fadab983c73e000000000000000000000000000000000000000000000000");
+            assert_eq!(id_auth_info.id_pubkey.curve, 2);
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_pubkey.inner.bytes), "485215abb30f7a2f89794c0ae30345ea3846c5439d6ff89265ea862505be7bc2e4d642c2f94a6c1b813ffd66fb21ff640000000000000000000000000000000000000000000000001cbfe7e621c1a7ff0c8baadff28b26330e713ddd0e8f3921d5fa3ea63ee180f6c92a6367aad3e4c48482f1d961a61503000000000000000000000000000000000000000000000000");
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_pubkey.inner.body.qx), "485215abb30f7a2f89794c0ae30345ea3846c5439d6ff89265ea862505be7bc2e4d642c2f94a6c1b813ffd66fb21ff64000000000000000000000000000000000000000000000000");
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_pubkey.inner.body.qy), "1cbfe7e621c1a7ff0c8baadff28b26330e713ddd0e8f3921d5fa3ea63ee180f6c92a6367aad3e4c48482f1d961a61503000000000000000000000000000000000000000000000000");
+        }
+        unsafe {
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.bytes), "21d3672ab8ef8a86fb1a979fb169bc1f238aab8f194f27b8122b5da519585e90a11a1522851ebb6b710b88298eae5e83000000000000000000000000000000000000000000000000da05badeda8b5c0dc9125e2ee608dc40238460c27bfa55e43e3be785aec90a782d7f35ef7d4b42cad8acfe454ac933ab000000000000000000000000000000000000000000000000");
+            assert_eq!(id_auth_info.id_pubkey.curve, 2);
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.bytes), "3441ad9a5aa58abf5416d6ae05d6527feb1eb0ee8c86898f43c6be011239dd7f0c3ccec59c89e323b8f3fa1ef5a2ba0a0000000000000000000000000000000000000000000000003d7de26dd160f0431a2ccb1f7ac0f1c983dfdb46ca86d5b2dba1b0b54b7802ed4dd8fa68ca333ad7ab0d3c50294226a3000000000000000000000000000000000000000000000000");
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.body.qx), "3441ad9a5aa58abf5416d6ae05d6527feb1eb0ee8c86898f43c6be011239dd7f0c3ccec59c89e323b8f3fa1ef5a2ba0a000000000000000000000000000000000000000000000000");
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.body.qy), "3d7de26dd160f0431a2ccb1f7ac0f1c983dfdb46ca86d5b2dba1b0b54b7802ed4dd8fa68ca333ad7ab0d3c50294226a3000000000000000000000000000000000000000000000000");
+        }
+    }
+
+    // Util
+    fn get_test_path(path: &str) -> PathBuf {
+        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        test_path.push(RESOURCES_TEST_DIR);
+        test_path.push(path);
+        test_path
+    }
+}

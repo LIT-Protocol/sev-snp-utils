@@ -9,7 +9,7 @@ use openssl::error::ErrorStack;
 use sha2::{Digest, Sha256, Sha384};
 use sha2::digest::Output;
 
-use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, fmt_slice_vec_to_hex, read_exact_to_bin_vec};
+use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, read_exact_to_bin_vec};
 use crate::common::cert::ecdsa_sig;
 use crate::error;
 use crate::error::Result as Result;
@@ -372,14 +372,6 @@ impl AttestationReport {
         (self.policy & POLICY_ABI_MINOR_MASK) >> POLICY_ABI_MINOR_SHIFT
     }
 
-    pub fn family_id_hex(&self) -> String {
-        fmt_slice_vec_to_hex(&self.family_id.0)
-    }
-
-    pub fn image_id_hex(&self) -> String {
-        fmt_slice_vec_to_hex(&self.image_id.0)
-    }
-
     pub fn signature_algo_is_ecdsa_p384_sha384(&self) -> bool {
         self.signature_algo == SIG_ALGO_ECDSA_P384_SHA384
     }
@@ -394,10 +386,6 @@ impl AttestationReport {
 
     pub fn report_data_hex(&self) -> String {
         fmt_bin_vec_to_hex(self.report_data.as_ref())
-    }
-
-    pub fn measurement_hex(&self) -> String {
-        fmt_slice_vec_to_hex(&self.measurement.0)
     }
 
     pub fn report_id_hex(&self) -> String {
@@ -452,8 +440,8 @@ mod tests {
         assert_eq!(report.policy_smt_allowed(), true);
         assert_eq!(report.policy_min_abi_major(), 0);
         assert_eq!(report.policy_min_abi_minor(), 0);
-        assert_eq!(report.family_id_hex(), "00000000000000000000000000000000");
-        assert_eq!(report.image_id_hex(), "00000000000000000000000000000000");
+        assert_eq!(report.family_id.hex(), "00000000000000000000000000000000");
+        assert_eq!(report.image_id.hex(), "00000000000000000000000000000000");
         assert_eq!(report.vmpl, 0);
         assert_eq!(report.signature_algo, 1);
         assert_eq!(report.signature_algo_is_ecdsa_p384_sha384(), true);
@@ -472,7 +460,7 @@ mod tests {
         assert_eq!(report.reserved0, 0);
         assert_eq!(report.report_data_hex(),
                    "e1c112ff908febc3b98b1693a6cd3564eaf8e5e6ca629d084d9f0eba99247cacdd72e369ff8941397c2807409ff66be64be908da17ad7b8a49a2a26c0e8086aa");
-        assert_eq!(report.measurement_hex(),
+        assert_eq!(report.measurement.hex(),
                    "7659528961bc689a43f5be14ed063fe1c26058e5a4f0bbbfd3944aa15032404c5afb731f7826c9a007f2ad63c813b04c");
         assert_eq!(report.host_data, vec![0; 32]);
         assert_eq!(report.id_key_digest, vec![0; 48]);
