@@ -47,7 +47,7 @@ impl BlockSigner for IdBlock {
     }
 }
 
-fn read_and_validate_id_key(path: &Path) -> Result<EcKey<Private>> {
+pub(crate) fn read_and_validate_id_key(path: &Path) -> Result<EcKey<Private>> {
     let key_pem_bytes = fs::read(path)
         .map_err(|e| io(e, Some(format!("failed to open: {:?}", path))))?;
     let key = PKey::private_key_from_pem(&key_pem_bytes[..])

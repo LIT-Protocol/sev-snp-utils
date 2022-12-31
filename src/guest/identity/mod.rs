@@ -4,9 +4,11 @@ use crate::error::Result;
 use crate::guest::identity::ecdsa::create_signed_id_auth_info;
 pub use crate::guest::identity::types::{BlockSigner, FamilyId, IdAuthInfo, IdBlock, ImageId,
                                         LaunchDigest, ToBase64};
+pub use crate::guest::identity::fingerprint::{fingerprint_id_key, fingerprint_id_key_as_hex};
 
 pub mod types;
 pub mod ecdsa;
+pub mod fingerprint;
 
 pub fn create_identity_block(ld: LaunchDigest,
                              family_id: FamilyId,

@@ -14,8 +14,8 @@ pub use guest::attestation::verify::{
     Policy, Verification,
 };
 pub use guest::identity::{
-    BlockSigner, create_identity_block, FamilyId, IdAuthInfo, IdBlock,
-    ImageId, LaunchDigest, ToBase64
+    BlockSigner, create_identity_block, FamilyId, fingerprint_id_key, fingerprint_id_key_as_hex, IdAuthInfo,
+    IdBlock, ImageId, LaunchDigest, ToBase64,
 };
 pub use guest::measure::calc_launch_digest;
 pub use guest::measure::types::SevMode;

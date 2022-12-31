@@ -255,3 +255,25 @@ fn main() {
     println!("id_auth_info: {}", id_auth_info.to_base64().unwrap());
 }
 ```
+
+### Fingerprints
+
+```rust
+use std::path::PathBuf;
+use sev_snp_utils::{
+    fingerprint_id_key_as_hex
+};
+
+fn main() {
+    let id_key_pem = PathBuf::from("./id-key.pem");
+    let author_key_pem = PathBuf::from("./author-key.pem");
+
+    let id_fingerprint = fingerprint_id_key_as_hex(id_key_pem.as_path()) // or fingerprint_id_key()
+        .expect("failed to fingerprint");
+    let author_fingerprint = fingerprint_id_key_as_hex(author_key_pem.as_path())
+        .expect("failed to fingerprint");
+    
+    println!("id_fingerprint: {}", id_fingerprint);
+    println!("author_fingerprint: {}", author_fingerprint);
+}
+```
