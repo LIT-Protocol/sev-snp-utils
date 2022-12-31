@@ -182,8 +182,10 @@ mod tests {
         assert_eq!(id_auth_info.author_key_algo, 1);
         unsafe {
             assert_eq!(id_auth_info.id_block_sig.body.r.len(), ECDSA_POINT_SIZE);
+            assert_ne!(&id_auth_info.id_block_sig.body.r, &[0; ECDSA_POINT_SIZE]);
             assert!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.body.r).ends_with("000000000000000000000000000000000000000000000000"));
             assert_eq!(id_auth_info.id_block_sig.body.s.len(), ECDSA_POINT_SIZE);
+            assert_ne!(&id_auth_info.id_block_sig.body.s, &[0; ECDSA_POINT_SIZE]);
             assert!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.body.s).ends_with("000000000000000000000000000000000000000000000000"));
 
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.bytes),
@@ -196,13 +198,15 @@ mod tests {
         }
         unsafe {
             assert_eq!(id_auth_info.id_key_sig.body.r.len(), ECDSA_POINT_SIZE);
+            assert_ne!(&id_auth_info.id_key_sig.body.r, &[0; ECDSA_POINT_SIZE]);
             assert!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.r).ends_with("000000000000000000000000000000000000000000000000"));
             assert_eq!(id_auth_info.id_key_sig.body.s.len(), ECDSA_POINT_SIZE);
+            assert_ne!(&id_auth_info.id_key_sig.body.s, &[0; ECDSA_POINT_SIZE]);
             assert!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.s).ends_with("000000000000000000000000000000000000000000000000"));
 
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.bytes),
                        format!("{}{}", fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.r), fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.s)));
-            
+
             assert_eq!(id_auth_info.id_pubkey.curve, 2);
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.bytes), "3441ad9a5aa58abf5416d6ae05d6527feb1eb0ee8c86898f43c6be011239dd7f0c3ccec59c89e323b8f3fa1ef5a2ba0a0000000000000000000000000000000000000000000000003d7de26dd160f0431a2ccb1f7ac0f1c983dfdb46ca86d5b2dba1b0b54b7802ed4dd8fa68ca333ad7ab0d3c50294226a3000000000000000000000000000000000000000000000000");
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.body.qx), "3441ad9a5aa58abf5416d6ae05d6527feb1eb0ee8c86898f43c6be011239dd7f0c3ccec59c89e323b8f3fa1ef5a2ba0a000000000000000000000000000000000000000000000000");

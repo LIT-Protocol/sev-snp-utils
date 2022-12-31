@@ -185,3 +185,73 @@ fn main() {
         .expect("failed to calculate launch digest");
 }
 ```
+
+## Identity
+
+### Preparation
+
+Before you can generate an `IdBlock` and `IdAuthInfo` you'll first need to create some ECDSA keys (pem files).
+
+```shell
+openssl genpkey -algorithm ec -pkeyopt ec_paramgen_curve:"P-384" -out id-key.pem
+
+# Author key is optional.
+openssl genpkey -algorithm ec -pkeyopt ec_paramgen_curve:"P-384" -out author-key.pem
+```
+
+### Generating
+
+#### Method interface
+
+```rust
+use std::path::PathBuf;
+use sev_snp_utils::{
+    create_identity_block, LaunchDigest, FamilyId, ImageId, ToBase64
+};
+
+fn main() {
+    let id_key_pem = PathBuf::from("./id-key.pem");
+    let author_key_pem = PathBuf::from("./author-key.pem");
+
+    let measurement = LaunchDigest::from_str("ffb0cb7f01a5d5b122430d66f211326ab5cf11a9a5d3189ec53adf9a60730bc63d9856fe9fe602abd662861d0ee36007");
+    let family_id = FamilyId::zeroes();
+    let image_id = ImageId::from_str("ffb0cb7f01a5d5b122430d66f211326a");
+    let guest_svn = 0;
+    let policy = 0x30000;
+    
+    let (id_block, id_auth_info) = create_identity_block(measurement, family_id, image_id,
+                                                         guest_svn, policy, id_key_pem.as_path(),
+                                                         Some(author_key_pem.as_path()))
+        .expect("failed to create identity block");
+    
+    println!("id_block: {}", id_block.to_base64().unwrap()); // Or call save_base64().
+    println!("id_auth_info: {}", id_auth_info.to_base64().unwrap());
+}
+```
+
+#### Object interface
+
+```rust
+use std::path::PathBuf;
+use sev_snp_utils::{
+    IdBlock, LaunchDigest, FamilyId, ImageId, BlockSigner, ToBase64
+};
+
+fn main() {
+    let id_key_pem = PathBuf::from("./id-key.pem");
+    let author_key_pem = PathBuf::from("./author-key.pem");
+
+    let id_block = IdBlock::default()
+        .with_ld(LaunchDigest::from_str("ffb0cb7f01a5d5b122430d66f211326ab5cf11a9a5d3189ec53adf9a60730bc63d9856fe9fe602abd662861d0ee36007"))
+        .with_family_id(FamilyId::zeroes())
+        .with_image_id(ImageId::from_str("ffb0cb7f01a5d5b122430d66f211326a"))
+        .with_guest_svn(0)
+        .with_policy(0x30000);
+
+    let id_auth_info = id_block.sign(id_key_pem.as_path(), Some(author_key_pem.as_path()))
+        .expect("failed to sign id block");
+    
+    println!("id_block: {}", id_block.to_base64().unwrap()); // Or call save_base64().
+    println!("id_auth_info: {}", id_auth_info.to_base64().unwrap());
+}
+```

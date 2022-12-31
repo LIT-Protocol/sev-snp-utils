@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+use std::str::FromStr;
 use bytemuck::{bytes_of, Pod, Zeroable};
 use libc::{c_uchar, c_uint, c_ulonglong};
 use once_cell::sync::Lazy;
@@ -81,6 +82,17 @@ impl TryFrom<&[u8]> for LaunchDigest {
     }
 }
 
+impl FromStr for LaunchDigest {
+    type Err = crate::error::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let bytes = hex::decode(s)
+            .map_err(|e| conversion(e, None))?;
+
+        Self::try_from(&bytes[..])
+    }
+}
+
 unsafe impl Zeroable for LaunchDigest {}
 
 unsafe impl Pod for LaunchDigest {}
@@ -121,6 +133,17 @@ impl TryFrom<&[u8]> for FamilyId {
             .map_err(|e| conversion(e, None))?;
 
         Ok(Self(value))
+    }
+}
+
+impl FromStr for FamilyId {
+    type Err = crate::error::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let bytes = hex::decode(s)
+            .map_err(|e| conversion(e, None))?;
+
+        Self::try_from(&bytes[..])
     }
 }
 
@@ -167,6 +190,17 @@ impl TryFrom<&[u8]> for ImageId {
     }
 }
 
+impl FromStr for ImageId {
+    type Err = crate::error::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let bytes = hex::decode(s)
+            .map_err(|e| conversion(e, None))?;
+
+        Self::try_from(&bytes[..])
+    }
+}
+
 unsafe impl Zeroable for ImageId {}
 
 unsafe impl Pod for ImageId {}
@@ -184,20 +218,21 @@ pub struct IdBlock {
 
 impl IdBlock {
     pub fn default() -> Self {
-        Self::zeroed()
+        let mut us = Self::zeroed();
+        us.version = ID_BLK_VERSION as u32;
+        us
     }
 
     pub fn new(ld: LaunchDigest,
                family_id: FamilyId,
                image_id: ImageId,
-               version: u32,
                guest_svn: u32,
                policy: u64) -> Self {
         Self {
             ld,
             family_id,
             image_id,
-            version,
+            version: ID_BLK_VERSION as u32,
             guest_svn,
             policy,
         }
@@ -215,11 +250,6 @@ impl IdBlock {
 
     pub fn with_image_id(mut self, image_id: ImageId) -> Self {
         self.image_id = image_id;
-        self
-    }
-
-    pub fn with_version(mut self, version: u32) -> Self {
-        self.version = version;
         self
     }
 
@@ -348,12 +378,38 @@ unsafe impl Pod for SevEcdsaPubKeyBody {}
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::str::FromStr;
     use bytemuck::checked::try_from_bytes;
     use crate::common::binary::fmt_slice_vec_to_hex;
     use crate::guest::identity::{IdAuthInfo, IdBlock};
     use crate::guest::identity::types::ToBase64;
+    use crate::{FamilyId, ImageId, LaunchDigest};
 
     const RESOURCES_TEST_DIR: &str = "resources/test/identity";
+
+    #[test]
+    fn launch_digest_hex_test() {
+        let ld = LaunchDigest::from_str("ffb0cb7f01a5d5b122430d66f211326ab5cf11a9a5d3189ec53adf9a60730bc63d9856fe9fe602abd662861d0ee36007")
+            .expect("failed to convert LaunchDigest from hex");
+
+        assert_eq!(ld.hex(), "ffb0cb7f01a5d5b122430d66f211326ab5cf11a9a5d3189ec53adf9a60730bc63d9856fe9fe602abd662861d0ee36007");
+    }
+
+    #[test]
+    fn image_id_hex_test() {
+        let image_id = ImageId::from_str("ffb0cb7f01a5d5b122430d66f211326a")
+            .expect("failed to convert ImageId from hex");
+
+        assert_eq!(image_id.hex(), "ffb0cb7f01a5d5b122430d66f211326a");
+    }
+
+    #[test]
+    fn family_id_hex_test() {
+        let family_id = FamilyId::from_str("ffb0cb7f01a5d5b122430d66f211326a")
+            .expect("failed to convert FamilyId from hex");
+
+        assert_eq!(family_id.hex(), "ffb0cb7f01a5d5b122430d66f211326a");
+    }
 
     #[test]
     fn id_block_test() {
