@@ -12,6 +12,8 @@ pub(crate) const ID_BLK_FAMILY_ID_BYTES: usize = ID_BLK_FAMILY_ID_BITS / 8;
 pub(crate) const ID_BLK_IMAGE_ID_BITS: usize = 128;
 pub(crate) const ID_BLK_IMAGE_ID_BYTES: usize = ID_BLK_IMAGE_ID_BITS / 8;
 
+pub(crate) const ID_BLK_VERSION: usize = 1;
+
 const ID_AUTH_INFO_RESERVED1_BYTES: usize = 0x03F - 0x008 + 1;
 const ID_AUTH_INFO_RESERVED2_BYTES: usize = 0x67F - 0x644 + 1;
 const ID_AUTH_INFO_RESERVED3_BYTES: usize = 0xFFF - 0xC84 + 1;
@@ -53,6 +55,18 @@ unsafe impl Pod for LaunchDigest {}
 #[derive(Debug, Clone, Copy)]
 pub struct FamilyId(pub(crate) [c_uchar; ID_BLK_FAMILY_ID_BYTES]);
 
+impl TryFrom<&[u8]> for FamilyId {
+    type Error = crate::error::Error;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        let value: [u8; ID_BLK_FAMILY_ID_BYTES] = value[..ID_BLK_FAMILY_ID_BYTES]
+            .try_into()
+            .map_err(|e| conversion(e, None))?;
+
+        Ok(Self(value))
+    }
+}
+
 unsafe impl Zeroable for FamilyId {}
 
 unsafe impl Pod for FamilyId {}
@@ -60,6 +74,18 @@ unsafe impl Pod for FamilyId {}
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
 pub struct ImageId(pub(crate) [c_uchar; ID_BLK_IMAGE_ID_BYTES]);
+
+impl TryFrom<&[u8]> for ImageId {
+    type Error = crate::error::Error;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        let value: [u8; ID_BLK_IMAGE_ID_BYTES] = value[..ID_BLK_IMAGE_ID_BYTES]
+            .try_into()
+            .map_err(|e| conversion(e, None))?;
+
+        Ok(Self(value))
+    }
+}
 
 unsafe impl Zeroable for ImageId {}
 
@@ -80,9 +106,9 @@ impl IdBlock {
     pub fn new(ld: LaunchDigest,
                family_id: FamilyId,
                image_id: ImageId,
-               version: c_uint,
-               guest_svn: c_uint,
-               policy: c_ulonglong) -> Self {
+               version: u32,
+               guest_svn: u32,
+               policy: u64) -> Self {
         Self {
             ld,
             family_id,
