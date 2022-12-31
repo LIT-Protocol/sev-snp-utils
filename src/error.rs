@@ -74,6 +74,7 @@ impl fmt::Display for Error {
             Kind::Fetch => f.write_str("fetch error")?,
             Kind::Io => f.write_str("io error")?,
             Kind::Cert => f.write_str("cert error")?,
+            Kind::OpenSSL => f.write_str("OpenSSL error")?,
         };
 
         if let Some(msg) = &self.inner.msg {
@@ -101,6 +102,7 @@ pub(crate) enum Kind {
     Fetch,
     Io,
     Cert,
+    OpenSSL
 }
 
 // constructors
@@ -131,4 +133,8 @@ pub(crate) fn cert(msg: Option<String>) -> Error {
 
 pub(crate) fn map_conversion_err<E: Into<BoxError>>(e: E) -> Error {
     conversion(e, None)
+}
+
+pub(crate) fn openssl<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
+    Error::new(Kind::OpenSSL, msg, Some(e))
 }

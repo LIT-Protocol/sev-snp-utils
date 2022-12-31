@@ -1,16 +1,17 @@
 use std::fs;
 use std::path::Path;
 
-use bytemuck::Zeroable;
+use bytemuck::{bytes_of, Zeroable};
 use openssl::bn::{BigNum, BigNumContext};
 use openssl::ec::{EcGroup, EcKey};
+use openssl::ecdsa::EcdsaSig;
 use openssl::nid::Nid;
 use openssl::pkey::{Id, PKey, Private};
 
 use crate::common::binary::{bin_vec_reverse_bytes};
-use crate::error::{conversion, io, Result, validation};
+use crate::error::{conversion, io, openssl, Result, validation};
 use crate::guest::identity::{IdAuthInfo, IdBlock};
-use crate::guest::identity::types::{ECDSA_POINT_SIZE, EcdsaCurve, SevAlgo, SevEcdsaPubKey, SevEcdsaPubKeyBody, SevEcdsaPubKeyInner};
+use crate::guest::identity::types::{ECDSA_POINT_SIZE, EcdsaCurve, SevAlgo, SevEcdsaPubKey, SevEcdsaPubKeyBody, SevEcdsaPubKeyInner, SevEcdsaSig, SevEcdsaSigBody, BlockSigner};
 
 pub(crate) fn create_signed_id_auth_info(id_block: &IdBlock,
                                          id_key_pem_path: &Path,
@@ -22,8 +23,8 @@ pub(crate) fn create_signed_id_auth_info(id_block: &IdBlock,
 
     id_auth_info.id_key_algo = SevAlgo::SevAlgoEcdsaP384Sha384 as u32;
     id_auth_info.id_pubkey = id_pubkey;
-
-    // TODO: Sign
+    id_auth_info.id_block_sig = SevEcdsaSig::try_from((&id_key,
+                                                       bytes_of(id_block)))?;
 
     if let Some(author_key_pem_path) = author_key_pem_path {
         let author_key = read_and_validate_id_key(author_key_pem_path)?;
@@ -31,11 +32,19 @@ pub(crate) fn create_signed_id_auth_info(id_block: &IdBlock,
 
         id_auth_info.author_key_algo = SevAlgo::SevAlgoEcdsaP384Sha384 as u32;
         id_auth_info.author_pubkey = author_pubkey;
-
-        // TODO: Sign
+        id_auth_info.id_key_sig = SevEcdsaSig::try_from((&id_key,
+                                                         bytes_of(&id_auth_info.id_pubkey)))?;
     }
 
     Ok(id_auth_info)
+}
+
+impl BlockSigner for IdBlock {
+    fn sign(&self,
+            id_key_pem_path: &Path,
+            author_key_pem_path: Option<&Path>) -> Result<IdAuthInfo> {
+        create_signed_id_auth_info(self, id_key_pem_path, author_key_pem_path)
+    }
 }
 
 fn read_and_validate_id_key(path: &Path) -> Result<EcKey<Private>> {
@@ -115,6 +124,39 @@ impl TryFrom<&EcKey<Private>> for SevEcdsaPubKey {
     }
 }
 
+impl TryFrom<(&EcKey<Private>, &[u8])> for SevEcdsaSig {
+    type Error = crate::error::Error;
+
+    fn try_from((priv_key, data): (&EcKey<Private>, &[u8])) -> Result<Self> {
+        let sig = EcdsaSig::sign(data, priv_key)
+            .map_err(|e| openssl(e, None))?;
+
+        let padded_r = bin_vec_reverse_bytes(
+            &sig.r().to_vec_padded(ECDSA_POINT_SIZE as i32)
+                .map_err(|e| conversion(e, None))?);
+        let padded_s = bin_vec_reverse_bytes(
+            &sig.s().to_vec_padded(ECDSA_POINT_SIZE as i32)
+                .map_err(|e| conversion(e, None))?);
+
+        let mut res = SevEcdsaSig::zeroed();
+        let mut body = SevEcdsaSigBody::zeroed();
+
+        body.r = padded_r.try_into()
+            .map_err(|_e| conversion("unexpected bytes left over setting SevEcdsaSigBody.r", None))?;
+        body.s = padded_s.try_into()
+            .map_err(|_e| conversion("unexpected bytes left over setting SevEcdsaSigBody.r", None))?;
+
+        let mut bytes: Vec<u8> = Vec::from(body.r);
+        bytes.extend_from_slice(&body.s);
+
+        res.body = body;
+        res.bytes = bytes.try_into()
+            .map_err(|_e| conversion("unexpected bytes left over setting SevEcdsaPubKeyInner.bytes", None))?;
+
+        Ok(res)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -122,6 +164,7 @@ mod tests {
     use crate::common::binary::fmt_slice_vec_to_hex;
     use crate::guest::identity::ecdsa::create_signed_id_auth_info;
     use crate::guest::identity::IdBlock;
+    use crate::guest::identity::types::ECDSA_POINT_SIZE;
 
     const RESOURCES_TEST_DIR: &str = "resources/test/identity";
 
@@ -138,14 +181,28 @@ mod tests {
         assert_eq!(id_auth_info.id_key_algo, 1);
         assert_eq!(id_auth_info.author_key_algo, 1);
         unsafe {
-            //assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.bytes), "776aaace68af45d6c1ceaf64523b748e42f8c171ce5f22237d40e50595870c887552f8fac0b9605bb53fc059488b2154000000000000000000000000000000000000000000000000b9fd80ad8eecb48624b919002f0a3181643c1b23edb83488d243e1d8044b5e3ba7a5c8caabf72cc551c4fadab983c73e000000000000000000000000000000000000000000000000");
+            assert_eq!(id_auth_info.id_block_sig.body.r.len(), ECDSA_POINT_SIZE);
+            assert!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.body.r).ends_with("000000000000000000000000000000000000000000000000"));
+            assert_eq!(id_auth_info.id_block_sig.body.s.len(), ECDSA_POINT_SIZE);
+            assert!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.body.s).ends_with("000000000000000000000000000000000000000000000000"));
+
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.bytes),
+                       format!("{}{}", fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.body.r), fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.body.s)));
+
             assert_eq!(id_auth_info.id_pubkey.curve, 2);
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_pubkey.inner.bytes), "485215abb30f7a2f89794c0ae30345ea3846c5439d6ff89265ea862505be7bc2e4d642c2f94a6c1b813ffd66fb21ff640000000000000000000000000000000000000000000000001cbfe7e621c1a7ff0c8baadff28b26330e713ddd0e8f3921d5fa3ea63ee180f6c92a6367aad3e4c48482f1d961a61503000000000000000000000000000000000000000000000000");
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_pubkey.inner.body.qx), "485215abb30f7a2f89794c0ae30345ea3846c5439d6ff89265ea862505be7bc2e4d642c2f94a6c1b813ffd66fb21ff64000000000000000000000000000000000000000000000000");
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_pubkey.inner.body.qy), "1cbfe7e621c1a7ff0c8baadff28b26330e713ddd0e8f3921d5fa3ea63ee180f6c92a6367aad3e4c48482f1d961a61503000000000000000000000000000000000000000000000000");
         }
         unsafe {
-            //assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.bytes), "21d3672ab8ef8a86fb1a979fb169bc1f238aab8f194f27b8122b5da519585e90a11a1522851ebb6b710b88298eae5e83000000000000000000000000000000000000000000000000da05badeda8b5c0dc9125e2ee608dc40238460c27bfa55e43e3be785aec90a782d7f35ef7d4b42cad8acfe454ac933ab000000000000000000000000000000000000000000000000");
+            assert_eq!(id_auth_info.id_key_sig.body.r.len(), ECDSA_POINT_SIZE);
+            assert!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.r).ends_with("000000000000000000000000000000000000000000000000"));
+            assert_eq!(id_auth_info.id_key_sig.body.s.len(), ECDSA_POINT_SIZE);
+            assert!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.s).ends_with("000000000000000000000000000000000000000000000000"));
+
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.bytes),
+                       format!("{}{}", fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.r), fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.s)));
+            
             assert_eq!(id_auth_info.id_pubkey.curve, 2);
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.bytes), "3441ad9a5aa58abf5416d6ae05d6527feb1eb0ee8c86898f43c6be011239dd7f0c3ccec59c89e323b8f3fa1ef5a2ba0a0000000000000000000000000000000000000000000000003d7de26dd160f0431a2ccb1f7ac0f1c983dfdb46ca86d5b2dba1b0b54b7802ed4dd8fa68ca333ad7ab0d3c50294226a3000000000000000000000000000000000000000000000000");
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.body.qx), "3441ad9a5aa58abf5416d6ae05d6527feb1eb0ee8c86898f43c6be011239dd7f0c3ccec59c89e323b8f3fa1ef5a2ba0a000000000000000000000000000000000000000000000000");

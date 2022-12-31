@@ -1,10 +1,12 @@
+use std::fs;
 use std::io::Read;
-use bytemuck::{Pod, Zeroable};
+use std::path::Path;
+use bytemuck::{bytes_of, Pod, Zeroable};
 use libc::{c_uchar, c_uint, c_ulonglong};
 use once_cell::sync::Lazy;
 use crate::common::binary::fmt_slice_vec_to_hex;
 
-use crate::error::{conversion, map_io_err, Result, validation};
+use crate::error::{conversion, io, map_io_err, Result, validation};
 
 pub(crate) const ID_BLK_DIGEST_BITS: usize = 384;
 pub(crate) const ID_BLK_DIGEST_BYTES: usize = ID_BLK_DIGEST_BITS / 8;
@@ -25,6 +27,17 @@ pub(crate) const ECDSA_POINT_SIZE_BITS: usize = 576;
 pub(crate) const ECDSA_POINT_SIZE: usize = ECDSA_POINT_SIZE_BITS / 8;
 pub(crate) const ECDSA_PUBKEY_RSVD_SIZE: usize = 0x403 - 0x94 + 1;
 pub(crate) const ECDSA_SIG_RSVD_SIZE: usize = 0x1ff - 0x90 + 1;
+
+pub trait BlockSigner {
+    fn sign(&self,
+            id_key_pem_path: &Path,
+            author_key_pem_path: Option<&Path>) -> Result<IdAuthInfo>;
+}
+
+pub trait ToBase64 {
+    fn to_base64(&self) -> Result<String>;
+    fn save_base64(&self, path: &Path) -> Result<()>;
+}
 
 pub(crate) static LD_ZEROED: Lazy<LaunchDigest> = Lazy::new(||
     LaunchDigest::zeroed());
@@ -221,8 +234,18 @@ impl IdBlock {
     }
 }
 
-unsafe impl Zeroable for IdBlock {}
+impl ToBase64 for IdBlock {
+    fn to_base64(&self) -> Result<String> {
+        Ok(base64::encode(bytes_of(self)))
+    }
 
+    fn save_base64(&self, path: &Path) -> Result<()> {
+        fs::write(path, self.to_base64()?)
+            .map_err(|e| io(e, None))
+    }
+}
+
+unsafe impl Zeroable for IdBlock {}
 unsafe impl Pod for IdBlock {}
 
 #[repr(C)]
@@ -237,6 +260,17 @@ pub struct IdAuthInfo {
     pub id_key_sig: SevEcdsaSig,
     pub author_pubkey: SevEcdsaPubKey,
     reserved3: [c_uchar; ID_AUTH_INFO_RESERVED3_BYTES],
+}
+
+impl ToBase64 for IdAuthInfo {
+    fn to_base64(&self) -> Result<String> {
+        Ok(base64::encode(bytes_of(self)))
+    }
+
+    fn save_base64(&self, path: &Path) -> Result<()> {
+        fs::write(path, self.to_base64()?)
+            .map_err(|e| io(e, None))
+    }
 }
 
 unsafe impl Zeroable for IdAuthInfo {}
@@ -317,15 +351,16 @@ mod tests {
     use bytemuck::checked::try_from_bytes;
     use crate::common::binary::fmt_slice_vec_to_hex;
     use crate::guest::identity::{IdAuthInfo, IdBlock};
+    use crate::guest::identity::types::ToBase64;
 
     const RESOURCES_TEST_DIR: &str = "resources/test/identity";
 
     #[test]
     fn id_block_test() {
         let id_block_path = get_test_path("id_block.b64");
-        let id_block_bytes = fs::read(id_block_path.as_path())
+        let id_block_b64 = fs::read(id_block_path.as_path())
             .expect("failed to read: 'id_block.b64'");
-        let id_block_bytes = base64::decode(&id_block_bytes[..])
+        let id_block_bytes = base64::decode(&id_block_b64[..])
             .expect("failed to decode: 'id_block.b64' as base64");
 
         let id_block: &IdBlock = try_from_bytes(&id_block_bytes[..])
@@ -337,14 +372,16 @@ mod tests {
         assert_eq!(id_block.version, 1);
         assert_eq!(id_block.guest_svn, 0);
         assert_eq!(id_block.policy, 0x30000);
+
+        assert_eq!(id_block.to_base64().unwrap(), String::from_utf8(id_block_b64).unwrap());
     }
 
     #[test]
     fn id_auth_info_test() {
         let id_auth_info_path = get_test_path("auth_info.b64");
-        let id_auth_info_bytes = fs::read(id_auth_info_path.as_path())
+        let id_auth_info_b64 = fs::read(id_auth_info_path.as_path())
             .expect("failed to read: 'auth_info.b64'");
-        let id_auth_info_bytes = base64::decode(&id_auth_info_bytes[..])
+        let id_auth_info_bytes = base64::decode(&id_auth_info_b64[..])
             .expect("failed to decode: 'auth_info.b64' as base64");
 
         let id_auth_info: &IdAuthInfo = try_from_bytes(&id_auth_info_bytes[..])
@@ -354,6 +391,8 @@ mod tests {
         assert_eq!(id_auth_info.author_key_algo, 1);
         unsafe {
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.bytes), "776aaace68af45d6c1ceaf64523b748e42f8c171ce5f22237d40e50595870c887552f8fac0b9605bb53fc059488b2154000000000000000000000000000000000000000000000000b9fd80ad8eecb48624b919002f0a3181643c1b23edb83488d243e1d8044b5e3ba7a5c8caabf72cc551c4fadab983c73e000000000000000000000000000000000000000000000000");
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.body.r), "776aaace68af45d6c1ceaf64523b748e42f8c171ce5f22237d40e50595870c887552f8fac0b9605bb53fc059488b2154000000000000000000000000000000000000000000000000");
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_block_sig.body.s), "b9fd80ad8eecb48624b919002f0a3181643c1b23edb83488d243e1d8044b5e3ba7a5c8caabf72cc551c4fadab983c73e000000000000000000000000000000000000000000000000");
             assert_eq!(id_auth_info.id_pubkey.curve, 2);
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_pubkey.inner.bytes), "485215abb30f7a2f89794c0ae30345ea3846c5439d6ff89265ea862505be7bc2e4d642c2f94a6c1b813ffd66fb21ff640000000000000000000000000000000000000000000000001cbfe7e621c1a7ff0c8baadff28b26330e713ddd0e8f3921d5fa3ea63ee180f6c92a6367aad3e4c48482f1d961a61503000000000000000000000000000000000000000000000000");
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_pubkey.inner.body.qx), "485215abb30f7a2f89794c0ae30345ea3846c5439d6ff89265ea862505be7bc2e4d642c2f94a6c1b813ffd66fb21ff64000000000000000000000000000000000000000000000000");
@@ -361,11 +400,15 @@ mod tests {
         }
         unsafe {
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.bytes), "21d3672ab8ef8a86fb1a979fb169bc1f238aab8f194f27b8122b5da519585e90a11a1522851ebb6b710b88298eae5e83000000000000000000000000000000000000000000000000da05badeda8b5c0dc9125e2ee608dc40238460c27bfa55e43e3be785aec90a782d7f35ef7d4b42cad8acfe454ac933ab000000000000000000000000000000000000000000000000");
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.r), "21d3672ab8ef8a86fb1a979fb169bc1f238aab8f194f27b8122b5da519585e90a11a1522851ebb6b710b88298eae5e83000000000000000000000000000000000000000000000000");
+            assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.id_key_sig.body.s), "da05badeda8b5c0dc9125e2ee608dc40238460c27bfa55e43e3be785aec90a782d7f35ef7d4b42cad8acfe454ac933ab000000000000000000000000000000000000000000000000");
             assert_eq!(id_auth_info.id_pubkey.curve, 2);
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.bytes), "3441ad9a5aa58abf5416d6ae05d6527feb1eb0ee8c86898f43c6be011239dd7f0c3ccec59c89e323b8f3fa1ef5a2ba0a0000000000000000000000000000000000000000000000003d7de26dd160f0431a2ccb1f7ac0f1c983dfdb46ca86d5b2dba1b0b54b7802ed4dd8fa68ca333ad7ab0d3c50294226a3000000000000000000000000000000000000000000000000");
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.body.qx), "3441ad9a5aa58abf5416d6ae05d6527feb1eb0ee8c86898f43c6be011239dd7f0c3ccec59c89e323b8f3fa1ef5a2ba0a000000000000000000000000000000000000000000000000");
             assert_eq!(fmt_slice_vec_to_hex(&id_auth_info.author_pubkey.inner.body.qy), "3d7de26dd160f0431a2ccb1f7ac0f1c983dfdb46ca86d5b2dba1b0b54b7802ed4dd8fa68ca333ad7ab0d3c50294226a3000000000000000000000000000000000000000000000000");
         }
+
+        assert_eq!(id_auth_info.to_base64().unwrap(), String::from_utf8(id_auth_info_b64).unwrap());
     }
 
     // Util
