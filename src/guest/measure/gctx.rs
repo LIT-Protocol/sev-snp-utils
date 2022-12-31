@@ -1,13 +1,10 @@
-use sha2::digest::consts::U48;
-use sha2::digest::typenum::Unsigned;
+use bytemuck::Zeroable;
 use crate::common::binary::fmt_slice_vec_to_hex;
 use crate::common::hash::sha384;
 use crate::error::{conversion, Result, validation};
+use crate::guest::identity::types::{ID_BLK_DIGEST_BYTES, LaunchDigest};
 
-pub const LD_SIZE: usize = U48::USIZE;
 pub const BLOCK_SIZE: usize = 4096;
-
-const ZEROS: [u8; LD_SIZE] = [0; LD_SIZE];
 
 /// VMSA page is recorded in the RMP table with GPA (u64)(-1).
 /// However, the address is page-aligned, and also all the bits above
@@ -15,26 +12,26 @@ const ZEROS: [u8; LD_SIZE] = [0; LD_SIZE];
 const VMSA_GPA: u64 = 0xFFFFFFFFF000;
 
 pub struct GCTX {
-    ld: [u8; LD_SIZE]
+    ld: LaunchDigest
 }
 
 impl GCTX {
     pub fn new() -> Self {
-        Self { ld: ZEROS }
+        Self { ld: LaunchDigest::zeroed() }
     }
 
-    pub fn ld(&self) -> &[u8; LD_SIZE] {
+    pub fn ld(&self) -> &LaunchDigest {
         &self.ld
     }
 
     pub fn hex_ld(&self) -> String {
-        fmt_slice_vec_to_hex(self.ld())
+        fmt_slice_vec_to_hex(self.ld().0.as_slice())
     }
 
     fn update(&mut self, page_type: u8, gpa: u64, contents: &[u8]) -> Result<()> {
-        if contents.len() != LD_SIZE {
-            return Err(validation(format!("contents must be of len LD_SIZE ({} vs {})",
-                                          contents.len(), LD_SIZE), None));
+        if contents.len() != ID_BLK_DIGEST_BYTES {
+            return Err(validation(format!("contents must be of len ID_BLK_DIGEST_BYTES ({} vs {})",
+                                          contents.len(), ID_BLK_DIGEST_BYTES), None));
         }
 
         let page_info_len: u16 = 0x70;
@@ -44,7 +41,7 @@ impl GCTX {
         let vmpl1_perms: u8 = 0;
 
         // SNP spec 8.17.2 Table 67 Layout of the PAGE_INFO structure
-        let mut page_info = Vec::from(self.ld);
+        let mut page_info = self.ld.to_vec();
         page_info.extend_from_slice(contents);
 
         page_info.extend_from_slice(&page_info_len.to_le_bytes());
@@ -64,12 +61,12 @@ impl GCTX {
         }
 
         let ld = sha384(&page_info).to_vec();
-        if ld.len() != LD_SIZE {
-            return Err(validation(format!("new ld is not of len LD_SIZE ({} vs {})",
-                                          ld.len(), LD_SIZE), None));
+        if ld.len() != ID_BLK_DIGEST_BYTES {
+            return Err(validation(format!("new ld is not of len ID_BLK_DIGEST_BYTES ({} vs {})",
+                                          ld.len(), ID_BLK_DIGEST_BYTES), None));
         }
 
-        self.ld = ld[..LD_SIZE].try_into()
+        self.ld = LaunchDigest::try_from(&ld[..])
             .map_err(|e| conversion(e, None))?;
 
         Ok(())
@@ -112,7 +109,8 @@ impl GCTX {
 
         let mut offset = 0;
         while offset < length_bytes {
-            self.update(0x03, gpa + (offset as u64), &ZEROS)?;
+            self.update(0x03, gpa + (offset as u64),
+                        LaunchDigest::zeroed().0.as_slice())?;
             offset += BLOCK_SIZE;
         }
 
@@ -120,19 +118,22 @@ impl GCTX {
     }
 
     pub fn update_unmeasured_page(&mut self, gpa: u64) -> Result<()> {
-        self.update(0x04,  gpa, &ZEROS)?;
+        self.update(0x04,  gpa,
+                    LaunchDigest::zeroed().0.as_slice())?;
 
         Ok(())
     }
 
     pub fn update_secrets_page(&mut self, gpa: u64) -> Result<()> {
-        self.update(0x05,  gpa, &ZEROS)?;
+        self.update(0x05,  gpa,
+                    LaunchDigest::zeroed().0.as_slice())?;
 
         Ok(())
     }
 
     pub fn update_cpuid_page(&mut self, gpa: u64) -> Result<()> {
-        self.update(0x06,  gpa, &ZEROS)?;
+        self.update(0x06,  gpa,
+                    LaunchDigest::zeroed().0.as_slice())?;
 
         Ok(())
     }
