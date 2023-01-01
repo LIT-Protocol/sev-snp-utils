@@ -9,6 +9,7 @@ use openssl::nid::Nid;
 use openssl::pkey::{Id, PKey, Private};
 
 use crate::common::binary::{bin_vec_reverse_bytes};
+use crate::common::hash::sha384;
 use crate::error::{conversion, io, openssl, Result, validation};
 use crate::guest::identity::{IdAuthInfo, IdBlock};
 use crate::guest::identity::types::{ECDSA_POINT_SIZE, EcdsaCurve, SevAlgo, SevEcdsaPubKey, SevEcdsaPubKeyBody, SevEcdsaPubKeyInner, SevEcdsaSig, SevEcdsaSigBody, BlockSigner};
@@ -128,7 +129,11 @@ impl TryFrom<(&EcKey<Private>, &[u8])> for SevEcdsaSig {
     type Error = crate::error::Error;
 
     fn try_from((priv_key, data): (&EcKey<Private>, &[u8])) -> Result<Self> {
-        let sig = EcdsaSig::sign(data, priv_key)
+        // Hash the data
+        let data = sha384(data).to_vec();
+
+        // Sign it
+        let sig = EcdsaSig::sign(&data[..], priv_key)
             .map_err(|e| openssl(e, None))?;
 
         let padded_r = bin_vec_reverse_bytes(
