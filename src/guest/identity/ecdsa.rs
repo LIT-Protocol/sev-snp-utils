@@ -30,10 +30,9 @@ pub(crate) fn create_signed_id_auth_info(id_block: &IdBlock,
 
     if let Some(author_key_pem_path) = author_key_pem_path {
         let (author_key, ec_author_key) = read_and_validate_id_key(author_key_pem_path)?;
-        let author_pubkey = SevEcdsaPubKey::try_from(&ec_author_key)?;
 
         id_auth_info.author_key_algo = SevAlgo::SevAlgoEcdsaP384Sha384 as u32;
-        id_auth_info.author_pubkey = author_pubkey;
+        id_auth_info.author_pubkey = SevEcdsaPubKey::try_from(&ec_author_key)?;
         id_auth_info.id_key_sig = SevEcdsaSig::try_from((&author_key,
                                                          bytes_of(&id_auth_info.id_pubkey)))?;
     }
@@ -130,12 +129,16 @@ impl TryFrom<(&PKey<Private>, &[u8])> for SevEcdsaSig {
     type Error = crate::error::Error;
 
     fn try_from((priv_key, data): (&PKey<Private>, &[u8])) -> Result<Self> {
-        let mut ctx = MdCtx::new().unwrap();
-        ctx.digest_sign_init(Some(Md::sha384()), priv_key).unwrap();
+        let mut ctx = MdCtx::new()
+            .map_err(|e| openssl(e, None))?;
+        ctx.digest_sign_init(Some(Md::sha384()), priv_key)
+            .map_err(|e| openssl(e, None))?;
+        ctx.digest_sign_update(data)
+            .map_err(|e| openssl(e, None))?;
 
-        ctx.digest_sign_update(data).unwrap();
         let mut signature = vec![];
-        ctx.digest_sign_final_to_vec(&mut signature).unwrap();
+        ctx.digest_sign_final_to_vec(&mut signature)
+            .map_err(|e| openssl(e, None))?;
 
         let sig = EcdsaSig::from_der(&signature[..])
             .map_err(|e| openssl(e, None))?;
