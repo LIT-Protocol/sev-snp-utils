@@ -129,14 +129,17 @@ impl TryFrom<(&PKey<Private>, &[u8])> for SevEcdsaSig {
     type Error = crate::error::Error;
 
     fn try_from((priv_key, data): (&PKey<Private>, &[u8])) -> Result<Self> {
+        // Try and mirror exactly what sev-guest was doing.
         let mut ctx = MdCtx::new()
             .map_err(|e| openssl(e, None))?;
         ctx.digest_sign_init(Some(Md::sha384()), priv_key)
             .map_err(|e| openssl(e, None))?;
 
+        // Determine sig size
         let size = ctx.digest_sign(data, None)
             .map_err(|e| openssl(e, None))?;
 
+        // Create sig
         let mut signature = vec![0;size];
         ctx.digest_sign(data, Some(&mut signature))
             .map_err(|e| openssl(e, None))?;
@@ -145,9 +148,11 @@ impl TryFrom<(&PKey<Private>, &[u8])> for SevEcdsaSig {
             return Err(openssl("signature is not the expected length", None));
         }
 
+        // Parse the created sig as DER.
         let sig = EcdsaSig::from_der(&signature[..])
             .map_err(|e| openssl(e, None))?;
 
+        // Extract r and s.
         let padded_r = bin_vec_reverse_bytes(
             &sig.r().to_vec_padded(ECDSA_POINT_SIZE as i32)
                 .map_err(|e| conversion(e, None))?);
