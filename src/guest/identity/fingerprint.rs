@@ -7,8 +7,8 @@ use crate::guest::identity::ecdsa::read_and_validate_id_key;
 use crate::guest::identity::types::SevEcdsaPubKey;
 
 pub fn fingerprint_id_key(pem_path: &Path) -> Result<Vec<u8>> {
-    let id_key = read_and_validate_id_key(pem_path)?;
-    let id_pubkey = SevEcdsaPubKey::try_from(&id_key)?;
+    let (_, ec_id_key) = read_and_validate_id_key(pem_path)?;
+    let id_pubkey = SevEcdsaPubKey::try_from(&ec_id_key)?;
 
     Ok(sha384(bytes_of(&id_pubkey)).to_vec())
 }

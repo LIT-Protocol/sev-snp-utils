@@ -5,7 +5,8 @@ use bytemuck::{bytes_of, Zeroable};
 use openssl::bn::{BigNum, BigNumContext};
 use openssl::ec::{EcGroup, EcKey};
 use openssl::ecdsa::EcdsaSig;
-use openssl::hash::{hash, MessageDigest};
+use openssl::md::Md;
+use openssl::md_ctx::MdCtx;
 use openssl::nid::Nid;
 use openssl::pkey::{Id, PKey, Private};
 
@@ -19,8 +20,8 @@ pub(crate) fn create_signed_id_auth_info(id_block: &IdBlock,
                                          author_key_pem_path: Option<&Path>) -> Result<IdAuthInfo> {
     let mut id_auth_info = IdAuthInfo::zeroed();
 
-    let id_key = read_and_validate_id_key(id_key_pem_path)?;
-    let id_pubkey = SevEcdsaPubKey::try_from(&id_key)?;
+    let (id_key, ec_id_key) = read_and_validate_id_key(id_key_pem_path)?;
+    let id_pubkey = SevEcdsaPubKey::try_from(&ec_id_key)?;
 
     id_auth_info.id_key_algo = SevAlgo::SevAlgoEcdsaP384Sha384 as u32;
     id_auth_info.id_pubkey = id_pubkey;
@@ -28,12 +29,12 @@ pub(crate) fn create_signed_id_auth_info(id_block: &IdBlock,
                                                        bytes_of(id_block)))?;
 
     if let Some(author_key_pem_path) = author_key_pem_path {
-        let author_key = read_and_validate_id_key(author_key_pem_path)?;
-        let author_pubkey = SevEcdsaPubKey::try_from(&author_key)?;
+        let (author_key, ec_author_key) = read_and_validate_id_key(author_key_pem_path)?;
+        let author_pubkey = SevEcdsaPubKey::try_from(&ec_author_key)?;
 
         id_auth_info.author_key_algo = SevAlgo::SevAlgoEcdsaP384Sha384 as u32;
         id_auth_info.author_pubkey = author_pubkey;
-        id_auth_info.id_key_sig = SevEcdsaSig::try_from((&id_key,
+        id_auth_info.id_key_sig = SevEcdsaSig::try_from((&author_key,
                                                          bytes_of(&id_auth_info.id_pubkey)))?;
     }
 
@@ -48,7 +49,7 @@ impl BlockSigner for IdBlock {
     }
 }
 
-pub(crate) fn read_and_validate_id_key(path: &Path) -> Result<EcKey<Private>> {
+pub(crate) fn read_and_validate_id_key(path: &Path) -> Result<(PKey<Private>, EcKey<Private>)> {
     let key_pem_bytes = fs::read(path)
         .map_err(|e| io(e, Some(format!("failed to open: {:?}", path))))?;
     let key = PKey::private_key_from_pem(&key_pem_bytes[..])
@@ -58,13 +59,13 @@ pub(crate) fn read_and_validate_id_key(path: &Path) -> Result<EcKey<Private>> {
         return Err(validation(format!("key must be of type 'EC' (path: {:?})", path), None));
     }
 
-    let key = key.ec_key()
+    let ec_key = key.ec_key()
         .map_err(|e| conversion(e, None))?;
 
-    key.check_key()
+    ec_key.check_key()
         .map_err(|e| validation(e, None))?;
 
-    if let Some(name) = key.group().curve_name() {
+    if let Some(name) = ec_key.group().curve_name() {
         if name != Nid::SECP384R1 {
             return Err(validation(format!("sev key must use curve 'secp384r1' (path: {:?})", path), None));
         }
@@ -72,7 +73,7 @@ pub(crate) fn read_and_validate_id_key(path: &Path) -> Result<EcKey<Private>> {
         return Err(validation(format!("sev key is invalid, missing curve data (path: {:?})", path), None));
     }
 
-    Ok(key)
+    Ok((key, ec_key))
 }
 
 impl TryFrom<&EcKey<Private>> for SevEcdsaPubKey {
@@ -125,16 +126,18 @@ impl TryFrom<&EcKey<Private>> for SevEcdsaPubKey {
     }
 }
 
-impl TryFrom<(&EcKey<Private>, &[u8])> for SevEcdsaSig {
+impl TryFrom<(&PKey<Private>, &[u8])> for SevEcdsaSig {
     type Error = crate::error::Error;
 
-    fn try_from((priv_key, data): (&EcKey<Private>, &[u8])) -> Result<Self> {
-        // Hash the data
-        let data = hash(MessageDigest::sha384(), data)
-            .map_err(|e| conversion(e, None))?;
+    fn try_from((priv_key, data): (&PKey<Private>, &[u8])) -> Result<Self> {
+        let mut ctx = MdCtx::new().unwrap();
+        ctx.digest_sign_init(Some(Md::sha384()), priv_key).unwrap();
 
-        // Sign it
-        let sig = EcdsaSig::sign(&data[..], priv_key)
+        ctx.digest_sign_update(data).unwrap();
+        let mut signature = vec![];
+        ctx.digest_sign_final_to_vec(&mut signature).unwrap();
+
+        let sig = EcdsaSig::from_der(&signature[..])
             .map_err(|e| openssl(e, None))?;
 
         let padded_r = bin_vec_reverse_bytes(
