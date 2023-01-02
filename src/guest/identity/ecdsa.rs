@@ -133,12 +133,17 @@ impl TryFrom<(&PKey<Private>, &[u8])> for SevEcdsaSig {
             .map_err(|e| openssl(e, None))?;
         ctx.digest_sign_init(Some(Md::sha384()), priv_key)
             .map_err(|e| openssl(e, None))?;
-        ctx.digest_sign_update(data)
+
+        let size = ctx.digest_sign(data, None)
             .map_err(|e| openssl(e, None))?;
 
-        let mut signature = vec![];
-        ctx.digest_sign_final_to_vec(&mut signature)
+        let mut signature = vec![0;size];
+        ctx.digest_sign(data, Some(&mut signature))
             .map_err(|e| openssl(e, None))?;
+
+        if signature.len() != size {
+            return Err(openssl("signature is not the expected length", None));
+        }
 
         let sig = EcdsaSig::from_der(&signature[..])
             .map_err(|e| openssl(e, None))?;
