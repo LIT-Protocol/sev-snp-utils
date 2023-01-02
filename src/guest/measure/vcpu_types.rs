@@ -4,19 +4,43 @@ use crate::error::conversion;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CpuType {
-    Epyc,
-    EpycV1,
-    EpycV2,
-    EpycIBPB,
-    EpycV3,
-    EpycV4,
-    EpycRome,
-    EpycRomeV1,
-    EpycRomeV2,
-    EpycRomeV3,
-    EpycMilan,
-    EpycMilanV1,
-    EpycMilanV2,
+    Epyc = 0,
+    EpycV1 = 1,
+    EpycV2 = 2,
+    EpycIBPB = 3,
+    EpycV3 = 4,
+    EpycV4 = 5,
+    EpycRome = 6,
+    EpycRomeV1 = 7,
+    EpycRomeV2 = 8,
+    EpycRomeV3 = 9,
+    EpycMilan = 10,
+    EpycMilanV1 = 11,
+    EpycMilanV2 = 12,
+}
+
+impl TryFrom<u8> for CpuType {
+    type Error = crate::error::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(CpuType::Epyc),
+            1 => Ok(CpuType::EpycV1),
+            3 => Ok(CpuType::EpycIBPB),
+            4 => Ok(CpuType::EpycV3),
+            5 => Ok(CpuType::EpycV4),
+            6 => Ok(CpuType::EpycRome),
+            7 => Ok(CpuType::EpycRomeV1),
+            8 => Ok(CpuType::EpycRomeV2),
+            9 => Ok(CpuType::EpycRomeV3),
+            10 => Ok(CpuType::EpycMilan),
+            11 => Ok(CpuType::EpycMilanV1),
+            12 => Ok(CpuType::EpycMilanV2),
+            _ => {
+                return Err(conversion(format!("value: '{}' cannot map to CpuType", value), None));
+            }
+        }
+    }
 }
 
 impl CpuType {
