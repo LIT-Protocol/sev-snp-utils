@@ -145,7 +145,7 @@ impl TryFrom<(&PKey<Private>, &[u8])> for SevEcdsaSig {
             .map_err(|e| openssl(e, None))?;
 
         if signature.len() != size {
-            return Err(openssl("signature is not the expected length", None));
+            return Err(openssl("signature is not of the expected length", None));
         }
 
         // Parse the created sig as DER.
