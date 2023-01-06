@@ -1,0 +1,1 @@
+pub type DerivedKey = [u8; 32];
