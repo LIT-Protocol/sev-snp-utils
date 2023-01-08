@@ -8,7 +8,7 @@ use log::debug;
 use crate::common::binary::read_exact_to_bin_vec;
 use crate::guest::ioctl::guest_request_types::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestGetReportIOCTL, SEV_GUEST_DEVICE, snp_get_report, SNP_REPORT_RESP_HEADER_BYTES, SNP_REPORT_MSG_RESP_RESERVED_BYTES};
 use crate::{error, AttestationReport};
-use crate::error::Result as Result;
+use crate::error::{Result as Result, io, validation};
 
 #[derive(Debug)]
 pub struct RequestAttestationReportMsgHeader {
@@ -42,7 +42,7 @@ impl Requester for AttestationReport {
     fn request_raw(data: &[u8]) -> Result<Vec<u8>> {
         // Validity checks.
         if data.len() > SNP_REPORT_USER_DATA_MAX_BYTES {
-            return Err(error::Error::new_msg(error::Kind::Validation, Some("Too many bytes of data provided.".into())));
+            return Err(validation("Too many bytes of data provided", None));
         }
 
         // Initialize data structures.
@@ -58,7 +58,7 @@ impl Requester for AttestationReport {
             let ret_code = snp_get_report(fd.as_raw_fd(), &mut snp_guest_request_get_report_ioctl)
                 .map_err(|e| error::io(e, Some("Error sending IOCTL".into())))?;
             if ret_code == -1 {
-                return Err(error::Error::new_msg(error::Kind::Io, Some(format!("Firmware error: {}", snp_guest_request_get_report_ioctl.fw_err))));
+                return Err(io(format!("Firmware error: {}", snp_guest_request_get_report_ioctl.fw_err), None));
             }
         }
         debug!("Received IOCTL response: {:?}", snp_guest_request_get_report_ioctl);
@@ -70,7 +70,7 @@ impl Requester for AttestationReport {
         let report_msg_header = RequestAttestationReportMsgHeader::from_reader(report_msg_header_rdr)?;
         debug!("Report Message Header: {:?}", report_msg_header);
         if report_msg_header.status != 0 {
-            return Err(error::Error::new_msg(error::Kind::Io, Some(format!("Non-zero status code {:?} with the following firmware error {:?}", report_msg_header.status, snp_guest_request_get_report_ioctl.fw_err))));
+            return Err(io(format!("Non-zero status code {:?} with the following firmware error {:?}", report_msg_header.status, snp_guest_request_get_report_ioctl.fw_err), None));
         }
 
         Ok(report_msg_bytes)

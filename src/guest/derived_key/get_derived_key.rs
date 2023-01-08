@@ -4,7 +4,7 @@ use std::os::fd::AsRawFd;
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::debug;
 
-use crate::{common::binary::read_exact_to_bin_vec, error::{self, Result}, guest::ioctl::guest_request_types::{snp_get_derived_key, SNP_DERIVED_KEY_RESP_HEADER_BYTES, SEV_GUEST_DEVICE}};
+use crate::{common::binary::read_exact_to_bin_vec, error::{self, Result, io}, guest::ioctl::guest_request_types::{snp_get_derived_key, SNP_DERIVED_KEY_RESP_HEADER_BYTES, SEV_GUEST_DEVICE}};
 
 use crate::guest::ioctl::guest_request_types::{SNP_DERIVED_KEY_MSG_RESP_RESERVED_BYTES, SNPGuestRequestGetDerivedKeyIOCTL};
 
@@ -122,7 +122,7 @@ impl DerivedKeyRequester for DerivedKey {
             let ret_code = snp_get_derived_key(fd.as_raw_fd(), &mut snp_guest_request_get_derived_key_ioctl)
                 .map_err(|e| error::io(e, Some("Error sending IOCTL".into())))?;
             if ret_code == -1 {
-                return Err(error::Error::new_msg(error::Kind::Io, Some(format!("Firmware error: {}", snp_guest_request_get_derived_key_ioctl.fw_err))));
+                return Err(io(format!("Firmware error: {}", snp_guest_request_get_derived_key_ioctl.fw_err), None));
             }
         }
         debug!("Received IOCTL response: {:?}", snp_guest_request_get_derived_key_ioctl);
@@ -134,7 +134,7 @@ impl DerivedKeyRequester for DerivedKey {
         let resp_msg_header = RequestDerivedKeyMsgHeader::from_reader(resp_msg_header_rdr)?;
         debug!("Response Message Header: {:?}", resp_msg_header);
         if resp_msg_header.status != 0 {
-            return Err(error::Error::new_msg(error::Kind::Io, Some(format!("Non-zero status code {:?} with the following firmware error {:?}", resp_msg_header.status, snp_guest_request_get_derived_key_ioctl.fw_err))));
+            return Err(io(format!("Non-zero status code {:?} with the following firmware error {:?}", resp_msg_header.status, snp_guest_request_get_derived_key_ioctl.fw_err), None));
         }
 
         Ok(resp_msg_bytes.as_slice().try_into().map_err(error::map_conversion_err)?)
