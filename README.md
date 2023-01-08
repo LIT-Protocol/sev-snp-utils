@@ -280,7 +280,7 @@ fn main() {
 
 ## Key Derivation
 
-The guest can ask the firmware to provide a key derived from a root key. This key may be used by the guest for any purpose it chooses, such as sealing keys or communicating with external entities.
+The guest can ask the firmware to provide a key derived from a root key contained within the AMD SEV-SNP PSP. This key may be used by the guest for any purpose it chooses, such as sealing keys (i.e. for disk encryption) or communicating with external entities. Usually the intention will be that this can be used to create a key that's only known to the guest.
 
 ### Preparation
 
@@ -331,3 +331,7 @@ fn main() {
     println!("Derived Key: {:?}", derived_key);
 }
 ```
+
+## Misc
+
+- AMD SEV-SNP Firmware ABI Specification: https://www.amd.com/system/files/TechDocs/56860.pdf
