@@ -277,3 +277,61 @@ fn main() {
     println!("author_fingerprint: {}", author_fingerprint);
 }
 ```
+
+## Key Derivation
+
+The guest can ask the firmware to provide a key derived from a root key contained within the AMD SEV-SNP PSP. This key may be used by the guest for any purpose it chooses, such as sealing keys (i.e. for disk encryption) or communicating with external entities. Usually the intention will be that this can be used to create a key that's only known to the guest.
+
+### Preparation
+
+Prepare the request using `DerivedKeyRequestedBuilder` like so:
+
+```rust
+let options = DerivedKeyRequestBuilder::new()
+    .with_tcb_version()
+    .with_image_id()
+    .build();
+```
+
+The example above mixes the TCB version provided by the guest and the image ID provided at launch into the derived key.
+
+Here is the complete list of builder methods you can use to mix different data into the derived key:
+
+- `with_tcb_version`: mixes in the TCB version provided by the guest.
+- `with_svn`: mixes in the SVN of the guest.
+- `with_launch_measurement`: mixes in the measurement of the guest at launch.
+- `with_family_id`: mixes in the family ID at launch.
+- `with_image_id`: mixes in the image ID at launch.
+- `with_policy`: mixes in the guest policy at launch.
+
+### Request
+
+Pass in the `DerivedKeyRequestOptions` struct to the `DerivedKey::request` method like so:
+
+```rust
+let derived_key = DerivedKey::request(options).unwrap();
+```
+
+### Examples
+
+Here is a MCVE of how to request a derived key from the firmware:
+
+```rust
+use sev_snp_utils::guest::derived_key::get_derived_key::{DerivedKeyRequester, DerivedKeyRequestBuilder};
+use sev_snp_utils::guest::derived_key::derived_key::DerivedKey;
+
+fn main() {
+    let options = DerivedKeyRequestBuilder::new()
+        .with_tcb_version()
+        .with_image_id()
+        .build();
+    println!("Options: {:?}", options);
+
+    let derived_key = DerivedKey::request(options).unwrap();
+    println!("Derived Key: {:?}", derived_key);
+}
+```
+
+## Misc
+
+- AMD SEV-SNP Firmware ABI Specification: https://www.amd.com/system/files/TechDocs/56860.pdf

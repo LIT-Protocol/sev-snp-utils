@@ -6,11 +6,9 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use log::debug;
 
 use crate::common::binary::read_exact_to_bin_vec;
-use crate::guest::attestation::get_report_types::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestIOCTL, SEV_GUEST_DEVICE, snp_get_report, SNP_REPORT_RESP_HEADER_BYTES};
+use crate::guest::ioctl::guest_request_types::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestGetReportIOCTL, SEV_GUEST_DEVICE, snp_get_report, SNP_REPORT_RESP_HEADER_BYTES, SNP_REPORT_MSG_RESP_RESERVED_BYTES};
 use crate::{error, AttestationReport};
-use crate::error::Result as Result;
-
-use super::get_report_types::SNP_REPORT_MSG_RESP_RESERVED_BYTES;
+use crate::error::{Result as Result, io, validation};
 
 #[derive(Debug)]
 pub struct RequestAttestationReportMsgHeader {
@@ -44,11 +42,11 @@ impl Requester for AttestationReport {
     fn request_raw(data: &[u8]) -> Result<Vec<u8>> {
         // Validity checks.
         if data.len() > SNP_REPORT_USER_DATA_MAX_BYTES {
-            return Err(error::Error::new_msg(error::Kind::Validation, Some("Too many bytes of data provided.".into())));
+            return Err(validation("Too many bytes of data provided", None));
         }
 
         // Initialize data structures.
-        let mut snp_guest_request_ioctl = SNPGuestRequestIOCTL::new_with_user_data(data.try_into().map_err(error::map_conversion_err)?);
+        let mut snp_guest_request_get_report_ioctl = SNPGuestRequestGetReportIOCTL::new_with_user_data(data.try_into().map_err(error::map_conversion_err)?);
     
         // Open the /dev/sev-guest device.
         let fd = File::options().read(true).write(true).open(SEV_GUEST_DEVICE)
@@ -57,22 +55,22 @@ impl Requester for AttestationReport {
         // Issue the guest request IOCTL.
         debug!("Issuing the guest request IOCTL");
         unsafe {
-            let ret_code = snp_get_report(fd.as_raw_fd(), &mut snp_guest_request_ioctl)
+            let ret_code = snp_get_report(fd.as_raw_fd(), &mut snp_guest_request_get_report_ioctl)
                 .map_err(|e| error::io(e, Some("Error sending IOCTL".into())))?;
             if ret_code == -1 {
-                return Err(error::Error::new_msg(error::Kind::Io, Some(format!("Firmware error: {}", snp_guest_request_ioctl.fw_err))));
+                return Err(io(format!("Firmware error: {}", snp_guest_request_get_report_ioctl.fw_err), None));
             }
         }
-        debug!("Received IOCTL response: {:?}", snp_guest_request_ioctl);
+        debug!("Received IOCTL response: {:?}", snp_guest_request_get_report_ioctl);
 
         // Check that the report was successfully generated.
-        let mut report_msg_bytes = snp_guest_request_ioctl.resp_data.data.to_vec();
+        let mut report_msg_bytes = snp_guest_request_get_report_ioctl.resp_data.data.to_vec();
         let report_msg_header_bytes = report_msg_bytes.drain(0..SNP_REPORT_RESP_HEADER_BYTES);
         let report_msg_header_rdr = Cursor::new(report_msg_header_bytes);
         let report_msg_header = RequestAttestationReportMsgHeader::from_reader(report_msg_header_rdr)?;
         debug!("Report Message Header: {:?}", report_msg_header);
         if report_msg_header.status != 0 {
-            return Err(error::Error::new_msg(error::Kind::Io, Some(format!("Non-zero status code {:?} with the following firmware error {:?}", report_msg_header.status, snp_guest_request_ioctl.fw_err))));
+            return Err(io(format!("Non-zero status code {:?} with the following firmware error {:?}", report_msg_header.status, snp_guest_request_get_report_ioctl.fw_err), None));
         }
 
         Ok(report_msg_bytes)
