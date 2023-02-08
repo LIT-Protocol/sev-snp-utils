@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Seek;
 use std::os::fd::AsRawFd;
 use byteorder::{LittleEndian, ReadBytesExt};
-use log::debug;
+use log::{trace};
 
 use crate::common::binary::read_exact_to_bin_vec;
 use crate::guest::ioctl::guest_request_types::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestGetReportIOCTL, SEV_GUEST_DEVICE, snp_get_report, SNP_REPORT_RESP_HEADER_BYTES, SNP_REPORT_MSG_RESP_RESERVED_BYTES};
@@ -53,7 +53,7 @@ impl Requester for AttestationReport {
             .map_err(|e| error::io(e, None))?;
 
         // Issue the guest request IOCTL.
-        debug!("Issuing the guest request IOCTL");
+        trace!("Issuing the guest request IOCTL");
         unsafe {
             let ret_code = snp_get_report(fd.as_raw_fd(), &mut snp_guest_request_get_report_ioctl)
                 .map_err(|e| error::io(e, Some("Error sending IOCTL".into())))?;
@@ -61,14 +61,14 @@ impl Requester for AttestationReport {
                 return Err(io(format!("Firmware error: {}", snp_guest_request_get_report_ioctl.fw_err), None));
             }
         }
-        debug!("Received IOCTL response: {:?}", snp_guest_request_get_report_ioctl);
+        //trace!("Received IOCTL response: {:?}", snp_guest_request_get_report_ioctl);
 
         // Check that the report was successfully generated.
         let mut report_msg_bytes = snp_guest_request_get_report_ioctl.resp_data.data.to_vec();
         let report_msg_header_bytes = report_msg_bytes.drain(0..SNP_REPORT_RESP_HEADER_BYTES);
         let report_msg_header_rdr = Cursor::new(report_msg_header_bytes);
         let report_msg_header = RequestAttestationReportMsgHeader::from_reader(report_msg_header_rdr)?;
-        debug!("Report Message Header: {:?}", report_msg_header);
+        //trace!("Report Message Header: {:?}", report_msg_header);
         if report_msg_header.status != 0 {
             return Err(io(format!("Non-zero status code {:?} with the following firmware error {:?}", report_msg_header.status, snp_guest_request_get_report_ioctl.fw_err), None));
         }
