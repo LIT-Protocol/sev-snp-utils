@@ -1,5 +1,5 @@
 use std::{io::{Read, Seek, Cursor}, fs::File};
-use std::os::fd::AsRawFd;
+use std::os::unix::io::AsRawFd;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::debug;
