@@ -1,7 +1,7 @@
 use std::io::{Read, Cursor};
 use std::fs::File;
 use std::io::Seek;
-use std::os::fd::AsRawFd;
+use std::os::unix::io::AsRawFd;
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::{trace};
 
