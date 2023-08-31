@@ -1343,7 +1343,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sev-snp-utilites"
+name = "sev-snp-utilities"
 version = "1.4.4"
 dependencies = [
  "async-std",
