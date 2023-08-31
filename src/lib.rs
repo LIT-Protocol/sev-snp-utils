@@ -1,5 +1,3 @@
-#![feature(async_closure)]
-
 pub use guest::attestation::certs::{
     CertFormat, get_kds_ark_ask_certs,
     get_kds_ark_ask_certs_and_validate, get_kds_ark_ask_certs_bytes, KdsCertificates,

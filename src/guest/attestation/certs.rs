@@ -1,6 +1,7 @@
 use std::env;
 use async_std::fs;
 use async_std::fs::{File, OpenOptions};
+use async_std::path::PathBuf;
 use async_std::sync::{Mutex};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -108,23 +109,23 @@ pub async fn get_kds_ark_ask_certs_bytes(product_name: &str, format: CertFormat)
         CertFormat::PEM => &ark_file_pem
     };
 
-    let load_files = async move || -> Result<(Bytes, Bytes)> {
+    async fn load_files(ask_want: &PathBuf, ark_want: &PathBuf, format: CertFormat) -> Result<(Bytes, Bytes)> {
         let ask_bytes = fs::read(ask_want).await
             .map_err(|e| crate::error::io(e, Some(format!("failed to read ASK {:?} file: {}",
-                                                          format, ask_want.to_str().unwrap()))))?;
+                                                        format, ask_want.to_str().unwrap()))))?;
         let ark_bytes = fs::read(&ark_want).await
             .map_err(|e| crate::error::io(e, Some(format!("failed to read ARK {:?} file: {}",
-                                                          format, ark_want.to_str().unwrap()))))?;
+                                                        format, ark_want.to_str().unwrap()))))?;
 
         return Ok((Bytes::from(ark_bytes), Bytes::from(ask_bytes)));
-    };
+    }
 
     {
         // Try read lock first and check if exists.
         let _guard = ArkFetchLockFile::read().await?;
 
         if ask_want.exists().await && ark_want.exists().await {
-            return load_files().await;
+            return load_files(ask_want, ark_want, format).await;
         }
     }
 
@@ -133,7 +134,7 @@ pub async fn get_kds_ark_ask_certs_bytes(product_name: &str, format: CertFormat)
 
     // Check one last time.
     if ask_want.exists().await && ark_want.exists().await {
-        return load_files().await;
+        return load_files(ask_want, ark_want, format).await;
     }
 
     match fetch_kds_vcek_cert_chain_pem(product_name).await {
@@ -274,19 +275,19 @@ pub async fn get_kds_vcek_cert_bytes(product_name: &str, chip_id: &str,
         CertFormat::PEM => &cert_file_pem
     };
 
-    let load_file = async move || -> Result<Bytes> {
+    async fn load_file(want_file: &PathBuf, format: CertFormat) -> Result<Bytes> {
         let bytes = fs::read(&want_file).await
             .map_err(|e| error::io(e, Some(format!("failed to read kds vcek {:?} file: {}",
                                                    format, want_file.to_str().unwrap()))))?;
         return Ok(Bytes::from(bytes));
-    };
+    }
 
     {
         // Try read lock first and check if exists.
         let _guard = ArkFetchLockFile::read().await?;
 
         if want_file.exists().await {
-            return load_file().await;
+            return load_file(want_file, format).await;
         }
     }
 
@@ -295,7 +296,7 @@ pub async fn get_kds_vcek_cert_bytes(product_name: &str, chip_id: &str,
 
     // Check exists one last time.
     if want_file.exists().await {
-        return load_file().await;
+        return load_file(want_file, format).await;
     }
 
     match fetch_kds_vcek_der(product_name, chip_id, boot_loader, tee, snp, microcode).await {
