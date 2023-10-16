@@ -860,6 +860,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57bcfdad1b858c2db7c38303a6d2ad4dfaf5eb53dfeb0910128b2c26d6158503"
 
 [[package]]
+name = "lit-sev-snp-utils"
+version = "1.4.4"
+dependencies = [
+ "async-std",
+ "async-trait",
+ "base64 0.20.0",
+ "bytemuck",
+ "byteorder",
+ "bytes",
+ "cached",
+ "hex",
+ "libc",
+ "log",
+ "nix",
+ "once_cell",
+ "openssl",
+ "pem",
+ "reqwest",
+ "sha2",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1340,30 +1364,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "sev-snp-utilities"
-version = "1.4.4"
-dependencies = [
- "async-std",
- "async-trait",
- "base64 0.20.0",
- "bytemuck",
- "byteorder",
- "bytes",
- "cached",
- "hex",
- "libc",
- "log",
- "nix",
- "once_cell",
- "openssl",
- "pem",
- "reqwest",
- "sha2",
- "tokio",
- "uuid",
 ]
 
 [[package]]
