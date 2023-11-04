@@ -15,6 +15,7 @@ exclude = ["resources/test/"]
 [features]
 default = []
 trust-dns = ["reqwest/trust-dns"]
+js = ["uuid/js"]
 
 [dependencies]
 libc = { version = "0.2.134" }
@@ -30,10 +31,11 @@ tokio = { version = "1.28.0", features = ["full"] }
 bytes = { version = "1.2.1" }
 log = { version = "0.4.17" }
 pem = { version = "1.1.0" }
-openssl = { version = "0.10.42" }
 base64 = { version = "0.20.0-alpha.1" }
 hex = { version = "0.4.3" }
 once_cell = { version = "1.17.0" }
+rustls = "0.21.8"
+p384 = "0.13.0"
 
 [dependencies.uuid]
 version = "1.2.2"

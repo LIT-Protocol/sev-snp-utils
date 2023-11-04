@@ -1,18 +1,19 @@
-use std::io::Read;
 use std::fs::File;
+use std::io::Read;
 use std::io::{Seek, SeekFrom};
 use std::path::Path;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use openssl::ecdsa::EcdsaSig;
-use openssl::error::ErrorStack;
-use sha2::{Digest, Sha256, Sha384};
+use p384::elliptic_curve::generic_array::GenericArray;
 use sha2::digest::Output;
+use sha2::{Digest, Sha256, Sha384};
 
 use crate::common::binary::{fmt_bin_vec_to_decimal, fmt_bin_vec_to_hex, read_exact_to_bin_vec};
 use crate::common::cert::ecdsa_sig;
 use crate::error;
-use crate::error::Result as Result;
+use crate::error::Error;
+use crate::error::Kind;
+use crate::error::Result;
 use crate::guest::identity::{FamilyId, ImageId, LaunchDigest};
 
 const REPORT_LAST_POSITION: u64 = 960; // End of signature.
@@ -41,46 +42,46 @@ const AUTHOR_KEY_EN_MASK: u64 = 1 << (AUTHOR_KEY_EN_SHIFT);
 reference: https://github.com/AMDESE/sev-guest/blob/main/include/attestation.h
 
 union tcb_version {
-	struct {
-		uint8_t boot_loader;
-		uint8_t tee;
-		uint8_t reserved[4];
-		uint8_t snp;
-		uint8_t microcode;
-	};
-	uint64_t raw;
+    struct {
+        uint8_t boot_loader;
+        uint8_t tee;
+        uint8_t reserved[4];
+        uint8_t snp;
+        uint8_t microcode;
+    };
+    uint64_t raw;
 };
 
 struct signature {
-	uint8_t r[72];
-	uint8_t s[72];
-	uint8_t reserved[512-144];
+    uint8_t r[72];
+    uint8_t s[72];
+    uint8_t reserved[512-144];
 };
 
 struct attestation_report {
-	uint32_t          version;			/* 0x000 */
-	uint32_t          guest_svn;			/* 0x004 */
-	uint64_t          policy;			/* 0x008 */
-	uint8_t           family_id[16];		/* 0x010 */
-	uint8_t           image_id[16];			/* 0x020 */
-	uint32_t          vmpl;				/* 0x030 */
-	uint32_t          signature_algo;		/* 0x034 */
-	union tcb_version platform_version;		/* 0x038 */
-	uint64_t          platform_info;		/* 0x040 */
-	uint32_t          flags;			/* 0x048 */
-	uint32_t          reserved0;			/* 0x04C */
-	uint8_t           report_data[64];		/* 0x050 */
-	uint8_t           measurement[48];		/* 0x090 */
-	uint8_t           host_data[32];		/* 0x0C0 */
-	uint8_t           id_key_digest[48];		/* 0x0E0 */
-	uint8_t           author_key_digest[48];	/* 0x110 */
-	uint8_t           report_id[32];		/* 0x140 */
-	uint8_t           report_id_ma[32];		/* 0x160 */
-	union tcb_version reported_tcb;			/* 0x180 */
-	uint8_t           reserved1[24];		/* 0x188 */
-	uint8_t           chip_id[64];			/* 0x1A0 */
-	uint8_t           reserved2[192];		/* 0x1E0 */
-	struct signature  signature;			/* 0x2A0 */
+    uint32_t          version;			/* 0x000 */
+    uint32_t          guest_svn;			/* 0x004 */
+    uint64_t          policy;			/* 0x008 */
+    uint8_t           family_id[16];		/* 0x010 */
+    uint8_t           image_id[16];			/* 0x020 */
+    uint32_t          vmpl;				/* 0x030 */
+    uint32_t          signature_algo;		/* 0x034 */
+    union tcb_version platform_version;		/* 0x038 */
+    uint64_t          platform_info;		/* 0x040 */
+    uint32_t          flags;			/* 0x048 */
+    uint32_t          reserved0;			/* 0x04C */
+    uint8_t           report_data[64];		/* 0x050 */
+    uint8_t           measurement[48];		/* 0x090 */
+    uint8_t           host_data[32];		/* 0x0C0 */
+    uint8_t           id_key_digest[48];		/* 0x0E0 */
+    uint8_t           author_key_digest[48];	/* 0x110 */
+    uint8_t           report_id[32];		/* 0x140 */
+    uint8_t           report_id_ma[32];		/* 0x160 */
+    union tcb_version reported_tcb;			/* 0x180 */
+    uint8_t           reserved1[24];		/* 0x188 */
+    uint8_t           chip_id[64];			/* 0x1A0 */
+    uint8_t           reserved2[192];		/* 0x1E0 */
+    struct signature  signature;			/* 0x2A0 */
 };
  */
 
@@ -98,19 +99,20 @@ pub struct TcbVersion {
 #[allow(dead_code)]
 impl TcbVersion {
     fn from_reader(mut rdr: impl Read) -> Result<Self> {
-        let boot_loader = rdr.read_u8()
-            .map_err(error::map_io_err)?;
-        let tee = rdr.read_u8()
-            .map_err(error::map_io_err)?;
+        let boot_loader = rdr.read_u8().map_err(error::map_io_err)?;
+        let tee = rdr.read_u8().map_err(error::map_io_err)?;
         let reserved = read_exact_to_bin_vec(&mut rdr, 4)?;
-        let snp = rdr.read_u8()
-            .map_err(error::map_io_err)?;
-        let microcode = rdr.read_u8()
-            .map_err(error::map_io_err)?;
+        let snp = rdr.read_u8().map_err(error::map_io_err)?;
+        let microcode = rdr.read_u8().map_err(error::map_io_err)?;
         let raw = vec![
-            boot_loader, tee,
-            reserved[0], reserved[1], reserved[2], reserved[3],
-            snp, microcode,
+            boot_loader,
+            tee,
+            reserved[0],
+            reserved[1],
+            reserved[2],
+            reserved[3],
+            snp,
+            microcode,
         ];
 
         Ok(TcbVersion {
@@ -140,14 +142,10 @@ pub struct BuildVersion {
 #[allow(dead_code)]
 impl BuildVersion {
     fn from_reader(mut rdr: impl Read) -> Result<Self> {
-        let build = rdr.read_u8()
-            .map_err(error::map_io_err)?;
-        let minor = rdr.read_u8()
-            .map_err(error::map_io_err)?;
-        let major = rdr.read_u8()
-            .map_err(error::map_io_err)?;
-        let reserved = rdr.read_u8()
-            .map_err(error::map_io_err)?;
+        let build = rdr.read_u8().map_err(error::map_io_err)?;
+        let minor = rdr.read_u8().map_err(error::map_io_err)?;
+        let major = rdr.read_u8().map_err(error::map_io_err)?;
+        let reserved = rdr.read_u8().map_err(error::map_io_err)?;
 
         Ok(BuildVersion {
             build,
@@ -173,11 +171,7 @@ impl Signature {
         let s = read_exact_to_bin_vec(&mut rdr, 72)?;
         let reserved = read_exact_to_bin_vec(&mut rdr, 144)?;
 
-        Ok(Signature {
-            r,
-            s,
-            reserved,
-        })
+        Ok(Signature { r, s, reserved })
     }
 
     pub fn r_hex(&self) -> String {
@@ -188,8 +182,23 @@ impl Signature {
         fmt_bin_vec_to_hex(self.s.as_ref())
     }
 
-    pub fn to_ecdsa_sig(&self) -> core::result::Result<EcdsaSig, ErrorStack> {
-        ecdsa_sig(self.r.as_ref(), self.s.as_ref())
+    pub fn to_ecdsa_sig(&self) -> Result<p384::ecdsa::Signature> {
+        let r_big_endian: Vec<u8> = self.r.iter().copied().take(48).rev().collect();
+        let s_big_endian: Vec<u8> = self.s.iter().copied().take(48).rev().collect();
+
+        p384::ecdsa::Signature::from_scalars(
+            GenericArray::clone_from_slice(&r_big_endian),
+            GenericArray::clone_from_slice(&s_big_endian),
+        )
+        .map_err(|e| {
+            Error::new(
+                Kind::Conversion,
+                Some(format!(
+                    "failed to deserialize signature from scalars: {e:?}"
+                )),
+                Some(e),
+            )
+        })
     }
 }
 
@@ -229,17 +238,16 @@ pub struct AttestationReport {
 #[allow(dead_code)]
 impl AttestationReport {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(&path)
-            .map_err(|e| error::io(e, None))?;
-        let file_len = file.metadata()
-            .map_err(|e| error::io(e, None))?
-            .len();
+        let file = File::open(&path).map_err(|e| error::io(e, None))?;
+        let file_len = file.metadata().map_err(|e| error::io(e, None))?.len();
 
         if file_len < REPORT_LAST_POSITION {
             return Err(error::io(
-                format!("report file is too short ({} vs {} min bytes))",
-                        file_len, REPORT_LAST_POSITION),
-                None
+                format!(
+                    "report file is too short ({} vs {} min bytes))",
+                    file_len, REPORT_LAST_POSITION
+                ),
+                None,
             ));
         }
 
@@ -248,29 +256,20 @@ impl AttestationReport {
 
     pub fn from_reader(mut rdr: impl Read + Seek) -> Result<Self> {
         // Take note of reader position.
-        let reader_initial_pos = rdr.stream_position()
-            .map_err(error::map_io_err)?;
+        let reader_initial_pos = rdr.stream_position().map_err(error::map_io_err)?;
 
         // Start parsing.
-        let version = rdr.read_u32::<LittleEndian>()
-            .map_err(error::map_io_err)?;
-        let guest_svn = rdr.read_u32::<LittleEndian>()
-            .map_err(error::map_io_err)?;
-        let policy = rdr.read_u64::<LittleEndian>()
-            .map_err(error::map_io_err)?;
+        let version = rdr.read_u32::<LittleEndian>().map_err(error::map_io_err)?;
+        let guest_svn = rdr.read_u32::<LittleEndian>().map_err(error::map_io_err)?;
+        let policy = rdr.read_u64::<LittleEndian>().map_err(error::map_io_err)?;
         let family_id = FamilyId::from_reader(&mut rdr)?;
         let image_id = ImageId::from_reader(&mut rdr)?;
-        let vmpl = rdr.read_u32::<LittleEndian>()
-            .map_err(error::map_io_err)?;
-        let signature_algo = rdr.read_u32::<LittleEndian>()
-            .map_err(error::map_io_err)?;
+        let vmpl = rdr.read_u32::<LittleEndian>().map_err(error::map_io_err)?;
+        let signature_algo = rdr.read_u32::<LittleEndian>().map_err(error::map_io_err)?;
         let platform_version = TcbVersion::from_reader(&mut rdr)?;
-        let platform_info = rdr.read_u64::<LittleEndian>()
-            .map_err(error::map_io_err)?;
-        let flags = rdr.read_u32::<LittleEndian>()
-            .map_err(error::map_io_err)?;
-        let reserved0 = rdr.read_u32::<LittleEndian>()
-            .map_err(error::map_io_err)?;
+        let platform_info = rdr.read_u64::<LittleEndian>().map_err(error::map_io_err)?;
+        let flags = rdr.read_u32::<LittleEndian>().map_err(error::map_io_err)?;
+        let reserved0 = rdr.read_u32::<LittleEndian>().map_err(error::map_io_err)?;
         let report_data = read_exact_to_bin_vec(&mut rdr, 64)?;
         let measurement = LaunchDigest::from_reader(&mut rdr)?;
         let host_data = read_exact_to_bin_vec(&mut rdr, 32)?;
@@ -287,18 +286,16 @@ impl AttestationReport {
         let launch_tcb = TcbVersion::from_reader(&mut rdr)?;
         let reserved2 = read_exact_to_bin_vec(&mut rdr, 168)?;
 
-        let signature_pos = rdr.stream_position()
-            .map_err(error::map_io_err)?;
+        let signature_pos = rdr.stream_position().map_err(error::map_io_err)?;
         let signature = Signature::from_reader(&mut rdr)?;
 
         // Rewind to initial reader position and read body (without signature)
         let body_byte_len = signature_pos - reader_initial_pos;
-        let mut body = vec![0;body_byte_len as usize];
+        let mut body = vec![0; body_byte_len as usize];
 
         rdr.seek(SeekFrom::Start(reader_initial_pos))
             .map_err(error::map_io_err)?;
-        rdr.read(&mut body)
-            .map_err(error::map_io_err)?;
+        rdr.read(&mut body).map_err(error::map_io_err)?;
 
         Ok(AttestationReport {
             body,
@@ -430,7 +427,10 @@ mod tests {
         let report = AttestationReport::from_file(&test_file).unwrap();
 
         assert_eq!(report.body.len(), 672);
-        assert_eq!(report.sha256_hex(), "365daa8187cc7678f057574561b00a60520bc315b957c2079675095603a1861a");
+        assert_eq!(
+            report.sha256_hex(),
+            "365daa8187cc7678f057574561b00a60520bc315b957c2079675095603a1861a"
+        );
         assert_eq!(report.sha384_hex(), "8ac02cb042d3909a0e67ecc8a89a4869d6838f0c243a5e4d417757d6c06d10ae15d84d2b728fe80a355792f671afd6b4");
         assert_eq!(report.version, 2);
         assert_eq!(report.guest_svn, 0);
@@ -471,8 +471,10 @@ mod tests {
         assert_eq!(report.author_key_digest_hex(),
                    "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
         assert_eq!(report.author_key_digest_present(), false);
-        assert_eq!(report.report_id_hex(),
-                   "d1c1273910e39b8286661767afa497dd02465cc8e0a7082c04cf576169407e6e");
+        assert_eq!(
+            report.report_id_hex(),
+            "d1c1273910e39b8286661767afa497dd02465cc8e0a7082c04cf576169407e6e"
+        );
         assert_eq!(report.report_id_ma, vec![255; 32]);
 
         assert_eq!(report.reported_tcb.boot_loader, 2);
@@ -527,6 +529,9 @@ mod tests {
         let res = AttestationReport::from_file(&test_file);
 
         assert_eq!(res.is_err(), true);
-        assert_eq!(res.err().unwrap().to_string(), "io error: report file is too short (793 vs 960 min bytes))");
+        assert_eq!(
+            res.err().unwrap().to_string(),
+            "io error: report file is too short (793 vs 960 min bytes))"
+        );
     }
 }
