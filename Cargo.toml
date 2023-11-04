@@ -1,5 +1,5 @@
 [package]
-name = "lit-sev-snp-utils"
+name = "sev-snp-utilities"
 description = "AMD SEV-SNP utils"
 authors = ["David Radunz <david.radunz@litprotocol.com>", "Howard Tam <howard@litprotocol.com>"]
 license = "Apache-2.0"
