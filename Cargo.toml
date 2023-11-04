@@ -36,6 +36,7 @@ hex = { version = "0.4.3" }
 once_cell = { version = "1.17.0" }
 rustls = "0.21.8"
 p384 = "0.13.0"
+rsa = "0.9.3"
 
 [dependencies.uuid]
 version = "1.2.2"
