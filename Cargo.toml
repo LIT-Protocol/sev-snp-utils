@@ -8,7 +8,7 @@ repository = "https://github.com/LIT-Protocol/sev-snp-utils"
 readme = "README.md"
 keywords = ["attestation", "AMD", "SEV-SNP"]
 categories = ["api-bindings", "hardware-support"]
-version = "1.4.4"
+version = "1.4.5"
 edition = "2021"
 exclude = ["resources/test/"]
 

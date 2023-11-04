@@ -1344,7 +1344,7 @@ dependencies = [
 
 [[package]]
 name = "sev-snp-utilities"
-version = "1.4.4"
+version = "1.4.5"
 dependencies = [
  "async-std",
  "async-trait",
