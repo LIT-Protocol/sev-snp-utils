@@ -28,6 +28,7 @@ pub(crate) const CACHE_PREFIX: &str = "certs";
 
 pub(crate) const FETCH_ATTEMPTS: u8 = 10;
 pub(crate) const FETCH_ATTEMPT_SLEEP_MS: u64 = 4000;
+pub(crate) const FETCH_ATTEMPT_SLEEP_EXPONENT_MS: u64 = 1500;
 
 const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
 #[allow(dead_code)]
@@ -80,7 +81,7 @@ pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> Result<Bytes> 
     );
     fetch_url_cached(
         get_kds_vcek_cert_chain_url(product_name).as_str(),
-        save_path.as_str(), FETCH_ATTEMPTS, FETCH_ATTEMPT_SLEEP_MS,
+        save_path.as_str(), FETCH_ATTEMPTS, FETCH_ATTEMPT_SLEEP_MS, FETCH_ATTEMPT_SLEEP_EXPONENT_MS
     ).await
 }
 
@@ -252,7 +253,7 @@ pub async fn fetch_kds_vcek_der(product_name: &str, chip_id: &str,
     );
     fetch_url_cached(
         get_kds_vcek_der_url(product_name, chip_id, boot_loader, tee, snp, microcode).as_str(),
-        save_path.as_str(), FETCH_ATTEMPTS, FETCH_ATTEMPT_SLEEP_MS,
+        save_path.as_str(), FETCH_ATTEMPTS, FETCH_ATTEMPT_SLEEP_MS, FETCH_ATTEMPT_SLEEP_EXPONENT_MS,
     ).await
 }
 
