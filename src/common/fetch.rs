@@ -5,8 +5,8 @@ use async_std::io::WriteExt;
 use async_std::path::PathBuf;
 use async_std::{fs, task};
 use bytes::Bytes;
-use log::debug;
 use reqwest::Client;
+use tracing::{debug, trace};
 
 use crate::common::cache::cache_file_path;
 use crate::error;
@@ -17,6 +17,7 @@ pub async fn fetch_url(
     retry_sleep_ms: u64,
     retry_sleep_exponent_ms: u64,
 ) -> error::Result<Option<Bytes>> {
+    trace!("fetch_url: url: {}", url);
     let client = create_http_client()?;
 
     let mut body: Option<Bytes> = None;
@@ -73,6 +74,7 @@ pub async fn fetch_url_cached(
     retry_sleep_ms: u64,
     retry_sleep_exponent_ms: u64,
 ) -> error::Result<Bytes> {
+    trace!("fetch_url_cached: url: {}, path: {}", url, path);
     let full_path = cache_file_path(path, true).await;
     if full_path.exists().await {
         return read_cached_file(full_path).await;
