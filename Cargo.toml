@@ -34,6 +34,7 @@ openssl = { version = "0.10.42" }
 base64 = { version = "0.20.0-alpha.1" }
 hex = { version = "0.4.3" }
 once_cell = { version = "1.17.0" }
+tracing = "0.1.40"
 
 [dependencies.uuid]
 version = "1.2.2"
