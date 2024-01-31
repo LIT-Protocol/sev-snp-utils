@@ -1,6 +1,6 @@
+use crate::error::conversion;
 use std::fmt;
 use std::str::FromStr;
-use crate::error::conversion;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CpuType {
@@ -17,6 +17,9 @@ pub enum CpuType {
     EpycMilan = 10,
     EpycMilanV1 = 11,
     EpycMilanV2 = 12,
+    EpycGenoa = 13,
+    EpycGenoaV1 = 14,
+    EpycGenoaV2 = 15,
 }
 
 impl TryFrom<u8> for CpuType {
@@ -36,8 +39,14 @@ impl TryFrom<u8> for CpuType {
             10 => Ok(CpuType::EpycMilan),
             11 => Ok(CpuType::EpycMilanV1),
             12 => Ok(CpuType::EpycMilanV2),
+            13 => Ok(CpuType::EpycGenoa),
+            14 => Ok(CpuType::EpycGenoaV1),
+            15 => Ok(CpuType::EpycGenoaV2),
             _ => {
-                return Err(conversion(format!("value: '{}' cannot map to CpuType", value), None));
+                return Err(conversion(
+                    format!("value: '{}' cannot map to CpuType", value),
+                    None,
+                ));
             }
         }
     }
@@ -59,6 +68,9 @@ impl CpuType {
             CpuType::EpycMilan => cpu_sig(25, 1, 1),
             CpuType::EpycMilanV1 => cpu_sig(25, 1, 1),
             CpuType::EpycMilanV2 => cpu_sig(25, 1, 1),
+            CpuType::EpycGenoa => cpu_sig(25, 1, 1),
+            CpuType::EpycGenoaV1 => cpu_sig(25, 1, 1),
+            CpuType::EpycGenoaV2 => cpu_sig(25, 1, 1),
         }
     }
 }
@@ -79,6 +91,9 @@ impl fmt::Display for CpuType {
             CpuType::EpycMilan => write!(f, "EPYC-Milan"),
             CpuType::EpycMilanV1 => write!(f, "EPYC-Milan-v1"),
             CpuType::EpycMilanV2 => write!(f, "EPYC-Milan-v2"),
+            CpuType::EpycGenoa => write!(f, "EYPC-Genoa"),
+            CpuType::EpycGenoaV1 => write!(f, "EYPC-Genoa-v1"),
+            CpuType::EpycGenoaV2 => write!(f, "EYPC-Genoa-v2"),
         }
     }
 }
@@ -101,7 +116,13 @@ impl FromStr for CpuType {
             "EPYC-Milan" => Ok(CpuType::EpycMilan),
             "EPYC-Milan-v1" => Ok(CpuType::EpycMilanV1),
             "EPYC-Milan-v2" => Ok(CpuType::EpycMilanV2),
-            _ => Err(conversion(format!("unable to create CpuType from_str: {}", s), None)),
+            "EPYC-Genoa" => Ok(CpuType::EpycGenoa),
+            "EPYC-Genoa-v1" => Ok(CpuType::EpycGenoaV1),
+            "EPYC-Genoa-v2" => Ok(CpuType::EpycGenoaV2),
+            _ => Err(conversion(
+                format!("unable to create CpuType from_str: {}", s),
+                None,
+            )),
         }
     }
 }
@@ -128,9 +149,5 @@ pub fn cpu_sig(family: i32, model: i32, stepping: i32) -> i32 {
 
     let stepping_low = stepping & 0xf;
 
-    (family_high << 20) |
-        (model_high << 16) |
-        (family_low << 8) |
-        (model_low << 4) |
-        stepping_low
+    (family_high << 20) | (model_high << 16) | (family_low << 8) | (model_low << 4) | stepping_low
 }
