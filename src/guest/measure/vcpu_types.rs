@@ -68,9 +68,9 @@ impl CpuType {
             CpuType::EpycMilan => cpu_sig(25, 1, 1),
             CpuType::EpycMilanV1 => cpu_sig(25, 1, 1),
             CpuType::EpycMilanV2 => cpu_sig(25, 1, 1),
-            CpuType::EpycGenoa => cpu_sig(25, 1, 1),
-            CpuType::EpycGenoaV1 => cpu_sig(25, 1, 1),
-            CpuType::EpycGenoaV2 => cpu_sig(25, 1, 1),
+            CpuType::EpycGenoa => cpu_sig(25, 17, 1),
+            CpuType::EpycGenoaV1 => cpu_sig(25, 17, 1),
+            CpuType::EpycGenoaV2 => cpu_sig(25, 17, 1),
         }
     }
 }
