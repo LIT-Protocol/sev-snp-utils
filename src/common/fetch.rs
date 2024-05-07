@@ -14,14 +14,12 @@ use crate::error;
 pub async fn fetch_url(
     url: &str,
     attempts: u8,
-    retry_sleep_ms: u64,
-    retry_sleep_exponent_ms: u64,
 ) -> error::Result<Option<Bytes>> {
     trace!("fetch_url: url: {}", url);
     let client = create_http_client()?;
 
     let mut body: Option<Bytes> = None;
-    let mut retry_sleep_ms = retry_sleep_ms;
+    let mut retry_sleep_ms = 4000;
     for attempt in 0..attempts {
         let is_last = attempt >= attempts - 1;
         let mut err_msg: String;
@@ -73,7 +71,7 @@ pub async fn fetch_url(
         debug!("{} (attempt {} of {})", &err_msg, attempt + 1, attempts);
 
         task::sleep(Duration::from_millis(retry_sleep_ms)).await;
-        retry_sleep_ms = retry_sleep_ms * retry_sleep_exponent_ms / 1000;
+        retry_sleep_ms = 4000 * 1500 / 1000;
     }
 
     Ok(body)
@@ -83,8 +81,6 @@ pub async fn fetch_url_cached(
     url: &str,
     path: &str,
     attempts: u8,
-    retry_sleep_ms: u64,
-    retry_sleep_exponent_ms: u64,
 ) -> error::Result<Bytes> {
     trace!("fetch_url_cached: url: {}, path: {}", url, path);
     let full_path = cache_file_path(path, true).await;
@@ -92,7 +88,7 @@ pub async fn fetch_url_cached(
         return read_cached_file(full_path).await;
     }
 
-    match fetch_url(url, attempts, retry_sleep_ms, retry_sleep_exponent_ms).await? {
+    match fetch_url(url, attempts).await? {
         Some(body) => {
             let mut output = File::create(&full_path).await.map_err(|e| {
                 crate::error::io(
