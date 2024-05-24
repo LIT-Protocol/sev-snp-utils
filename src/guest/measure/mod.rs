@@ -5,7 +5,7 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use crate::error::Result;
+use crate::error::{Result,validation};
 use crate::guest::identity::LaunchDigest;
 use crate::guest::measure::gctx::GCTX;
 use crate::guest::measure::ovmf::{OVMF, SectionType};
@@ -13,6 +13,8 @@ use crate::guest::measure::sev_hashes::SevHashes;
 use crate::guest::measure::types::SevMode;
 use crate::guest::measure::vcpu_types::CpuType;
 use crate::guest::measure::vmsa::VSMA;
+
+use self::ovmf::OvmfSevMetadataSectionDesc;
 
 pub mod types;
 pub mod gctx;
@@ -42,18 +44,43 @@ pub fn calc_launch_digest(mode: SevMode,
     }
 }
 
-pub(crate) fn snp_update_metadata_pages(gctx: &mut GCTX, ovmf: &OVMF) -> Result<()> {
-    for desc in ovmf.metadata_items() {
-        match desc.section_type()? {
-            SectionType::SnpSecMem =>
-                gctx.update_zero_pages(desc.gpa() as u64, desc.size() as usize)?,
-            SectionType::SnpSecrets =>
-                gctx.update_secrets_page(desc.gpa() as u64)?,
-            SectionType::CPUID =>
-                gctx.update_cpuid_page(desc.gpa() as u64)?
-        }
+pub(crate) fn snp_update_kernel_hashes(gctx: &mut GCTX, ovmf: &OVMF, sev_hashes: &Option<SevHashes>, gpa: u64, size: u64) -> Result<()> {
+    if let Some(sev_hashes) = sev_hashes {
+    let sev_hashes_table_gpa = ovmf.sev_hashes_table_gpa()? as usize;
+    let offset_in_page = sev_hashes_table_gpa & PAGE_MASK;
+    let sev_hashes_page = sev_hashes.construct_page(offset_in_page)?;
+    if sev_hashes_page.len() != size as usize {
+        return Err(validation(format!("hashes page is {} bytes when it should be {size} bytes",sev_hashes_page.len()),None))
     }
+        gctx.update_normal_pages(gpa, sev_hashes_page.as_slice())?
+    }
+    else {
+        gctx.update_zero_pages(gpa, size as usize)?
+    }
+    Ok(())
+}
 
+pub(crate) fn snp_update_section(desc: &OvmfSevMetadataSectionDesc, gctx: &mut GCTX, ovmf: &OVMF, sev_hashes: &Option<SevHashes>) -> Result<()> {
+    match desc.section_type()? {
+        SectionType::SnpSecMem =>
+            gctx.update_zero_pages(desc.gpa() as u64, desc.size() as usize),
+        SectionType::SnpSecrets =>
+            gctx.update_secrets_page(desc.gpa() as u64),
+        SectionType::CPUID =>
+            // TODO: Add VMMType if not vmm_type == VMMType.ec2:
+            gctx.update_cpuid_page(desc.gpa() as u64),
+        SectionType::SnpKernelHashes =>
+            snp_update_kernel_hashes(gctx, ovmf, sev_hashes, desc.gpa() as u64, desc.size() as u64)
+    }
+}
+pub(crate) fn snp_update_metadata_pages(gctx: &mut GCTX, ovmf: &OVMF, sev_hashes: Option<SevHashes>) -> Result<()> {
+    for desc in ovmf.metadata_items() {
+            snp_update_section(desc, gctx, ovmf, &sev_hashes)?
+        }
+        // TODO if vmm_type == VMMType.ec2:
+        if sev_hashes.is_some() && !ovmf.has_metadata_section(SectionType::SnpKernelHashes){
+            return Err(validation("Kernel specified but OVMF metadata doesn't include SNP_KERNEL_HASHES section",None))
+        }
     Ok(())
 }
 
@@ -66,18 +93,16 @@ pub fn snp_calc_launch_digest(vcpus: usize,
     let ovmf = OVMF::from_path(ovmf_path)?;
 
     let mut gctx = GCTX::new();
+    // TODO:  https://github.com/virtee/sev-snp-measure/blob/9dabc4b6a853ec5a41b20d899ae2b68d8f0b81c0/sevsnpmeasure/guest.py#L100
+    // add precomputed ovmf hash optional 
     gctx.update_normal_pages(ovmf.gpa(), ovmf.data())?;
 
+    let mut sev_hashes = None;
     if let Some(kernel_path) = kernel_path {
-        let sev_hashes_table_gpa = ovmf.sev_hashes_table_gpa()? as usize;
-        let offset_in_page = sev_hashes_table_gpa & PAGE_MASK;
-        let sev_hashes_page_gpa = sev_hashes_table_gpa & !PAGE_MASK;
-        let sev_hashes = SevHashes::new(kernel_path, initrd_path, append)?;
-        let sev_hashes_page = sev_hashes.construct_page(offset_in_page)?;
-        gctx.update_normal_pages(sev_hashes_page_gpa as u64, &sev_hashes_page[..])?;
+        sev_hashes = Some(SevHashes::new(kernel_path, initrd_path, append)?);
     }
 
-    snp_update_metadata_pages(&mut gctx, &ovmf)?;
+    snp_update_metadata_pages(&mut gctx, &ovmf, sev_hashes)?;
 
     let vmsa = VSMA::new(SevMode::SevSnp,
                          ovmf.sev_es_reset_eip()?, vcpu_type);
@@ -94,39 +119,45 @@ pub(crate) fn seves_calc_launch_digest(vcpus: usize,
                                        kernel_path: Option<&Path>,
                                        initrd_path: Option<&Path>,
                                        append: Option<&str>) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
+    let mut launch_hash = Sha256::new();
     let ovmf = OVMF::from_path(ovmf_path)?;
-    hasher.update(ovmf.data());
+    launch_hash.update(ovmf.data());
 
     if let Some(kernel_path) = kernel_path {
+        if !ovmf.is_sev_hashes_table_supported(){
+            return Err(validation(format!("Kernel specified but OVMF doesn't support kernel/initrd/cmdline measurement"),None))
+        }
         let sev_hashes_table = SevHashes::new(kernel_path, initrd_path, append)?
             .construct_table()?;
-        hasher.update(&sev_hashes_table);
+        launch_hash.update(&sev_hashes_table);
     }
     let vmsa = VSMA::new(SevMode::SevEs,
                          ovmf.sev_es_reset_eip()?, vcpu_type);
     for page in vmsa.pages(vcpus) {
-        hasher.update(&page);
+        launch_hash.update(&page);
     }
 
-    Ok(hasher.finalize().to_vec())
+    Ok(launch_hash.finalize().to_vec())
 }
 
 pub(crate) fn sev_calc_launch_digest(ovmf_path: &Path,
                                      kernel_path: Option<&Path>,
                                      initrd_path: Option<&Path>,
                                      append: Option<&str>) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
+    let mut launch_hash = Sha256::new();
     let ovmf = OVMF::from_path(ovmf_path)?;
-    hasher.update(ovmf.data());
+    launch_hash.update(ovmf.data());
 
     if let Some(kernel_path) = kernel_path {
+        if !ovmf.is_sev_hashes_table_supported(){
+            return Err(validation(format!("Kernel specified but OVMF doesn't support kernel/initrd/cmdline measurement"),None))
+        }
         let sev_hashes_table = SevHashes::new(kernel_path, initrd_path, append)?
             .construct_table()?;
-        hasher.update(&sev_hashes_table);
+        launch_hash.update(&sev_hashes_table);
     }
 
-    Ok(hasher.finalize().to_vec())
+    Ok(launch_hash.finalize().to_vec())
 }
 
 #[cfg(test)]
