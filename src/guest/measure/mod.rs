@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn calc_launch_digest_test() {
-        let ovmf_path = get_test_path("OVMF_CODE.fd");
+        let ovmf_path = get_test_path("ovmf_AmdSev_suffix.bin"); // note: OVMF must have hashes table built in
         let kernel_path = get_test_path("vmlinuz");
         let append_path = get_test_path("vmlinuz.cmdline");
         let initrd_path = get_test_path("initrd.img");
