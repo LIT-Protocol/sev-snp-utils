@@ -148,12 +148,12 @@ unsafe impl Zeroable for SevEsSaveArea {}
 
 unsafe impl Pod for SevEsSaveArea {}
 
-pub struct VSMA {
+pub struct VMSA {
     bsp_save_area: SevEsSaveArea,
     ap_save_area: Option<SevEsSaveArea>,
 }
 
-impl VSMA {
+impl VMSA {
     pub fn new(sev_mode: SevMode, ap_eip: u64, vcpu_type: CpuType) -> Self {
         let sev_features = match sev_mode {
             SevMode::SevSnp => 0x1,
@@ -235,12 +235,12 @@ mod tests {
     use crate::guest::measure::ovmf::OVMF;
     use crate::guest::measure::types::SevMode;
     use crate::guest::measure::vcpu_types::CpuType;
-    use crate::guest::measure::vmsa::VSMA;
+    use crate::guest::measure::vmsa::VMSA;
 
     const RESOURCES_TEST_DIR: &str = "resources/test/measure";
 
     #[test]
-    fn vsma_test() {
+    fn vmsa_test() {
         let test_file = get_test_path("OVMF_CODE.fd");
 
         let ovmf = OVMF::from_path(&test_file)
@@ -248,7 +248,7 @@ mod tests {
 
         let sev_es_reset_eip = ovmf.sev_es_reset_eip().unwrap();
 
-        let vmsa = VSMA::new(SevMode::SevSnp,
+        let vmsa = VMSA::new(SevMode::SevSnp,
                              sev_es_reset_eip as c_ulonglong, CpuType::EpycV4);
         let pages = vmsa.pages(8);
 

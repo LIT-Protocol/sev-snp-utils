@@ -12,7 +12,7 @@ use crate::guest::measure::ovmf::{OVMF, SectionType};
 use crate::guest::measure::sev_hashes::SevHashes;
 use crate::guest::measure::types::SevMode;
 use crate::guest::measure::vcpu_types::CpuType;
-use crate::guest::measure::vmsa::VSMA;
+use crate::guest::measure::vmsa::VMSA;
 
 use self::ovmf::OvmfSevMetadataSectionDesc;
 
@@ -104,7 +104,7 @@ pub fn snp_calc_launch_digest(vcpus: usize,
 
     snp_update_metadata_pages(&mut gctx, &ovmf, sev_hashes)?;
 
-    let vmsa = VSMA::new(SevMode::SevSnp,
+    let vmsa = VMSA::new(SevMode::SevSnp,
                          ovmf.sev_es_reset_eip()?, vcpu_type);
     for page in vmsa.pages(vcpus) {
         gctx.update_vmsa_page(&page[..])?;
@@ -131,7 +131,7 @@ pub(crate) fn seves_calc_launch_digest(vcpus: usize,
             .construct_table()?;
         launch_hash.update(&sev_hashes_table);
     }
-    let vmsa = VSMA::new(SevMode::SevEs,
+    let vmsa = VMSA::new(SevMode::SevEs,
                          ovmf.sev_es_reset_eip()?, vcpu_type);
     for page in vmsa.pages(vcpus) {
         launch_hash.update(&page);
