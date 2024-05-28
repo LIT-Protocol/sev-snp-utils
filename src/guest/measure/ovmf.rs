@@ -25,6 +25,7 @@ pub enum SectionType {
     SnpSecMem = 1,
     SnpSecrets = 2,
     CPUID = 3,
+    SvsmCaa = 4,
     SnpKernelHashes = 0x10
 }
 

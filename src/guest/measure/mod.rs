@@ -69,6 +69,8 @@ pub(crate) fn snp_update_section(desc: &OvmfSevMetadataSectionDesc, gctx: &mut G
         SectionType::CPUID =>
             // TODO: Add VMMType if not vmm_type == VMMType.ec2:
             gctx.update_cpuid_page(desc.gpa() as u64),
+        SectionType::SvsmCaa =>
+            gctx.update_zero_pages(desc.gpa() as u64, desc.size() as usize),
         SectionType::SnpKernelHashes =>
             snp_update_kernel_hashes(gctx, ovmf, sev_hashes, desc.gpa() as u64, desc.size() as u64)
     }
