@@ -37,6 +37,7 @@ impl TryFrom<u8> for SectionType {
             1 => Ok(SectionType::SnpSecMem),
             2 => Ok(SectionType::SnpSecrets),
             3 => Ok(SectionType::CPUID),
+            4 => Ok(SectionType::SvsmCaa),
             0x10 => Ok(SectionType::SnpKernelHashes),
             _ => {
                 return Err(conversion(format!("value: '{}' cannot map to SectionType", value), None));
