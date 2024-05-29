@@ -92,6 +92,15 @@ pub fn snp_calc_launch_digest(vcpus: usize,
                               kernel_path: Option<&Path>,
                               initrd_path: Option<&Path>,
                               append: Option<&str>) -> Result<LaunchDigest> {
+
+    log::warn!("========== CALCULATING LAUNCH DIGEST ===========");
+    log::warn!("vcpus: {:?}",vcpus.clone());
+    log::warn!("vcpu_type: {:?}",vcpu_type.clone());
+    log::warn!("ovmf_path: {:?}",ovmf_path.clone());
+    log::warn!("kernel_path: {:?}",kernel_path.clone());
+    log::warn!("initrd_path: {:?}",initrd_path.clone());
+    log::warn!("append: {:?}",append.clone());
+
     let ovmf = OVMF::from_path(ovmf_path)?;
 
     let mut gctx = GCTX::new();
@@ -111,6 +120,9 @@ pub fn snp_calc_launch_digest(vcpus: usize,
     for page in vmsa.pages(vcpus) {
         gctx.update_vmsa_page(&page[..])?;
     }
+
+    log::warn!("LD hex: {:?}",gctx.hex_ld());
+    log::warn!("========== END CALCULATING LAUNCH DIGEST ===========");
 
     Ok(gctx.take_ld())
 }
