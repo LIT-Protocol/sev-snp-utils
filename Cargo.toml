@@ -1,5 +1,5 @@
 [package]
-name = "sev-snp-utilities"
+name = "sev-snp-utils"
 description = "AMD SEV-SNP utils"
 authors = [
     "Nicholas Young <nicholas@litprotocol.com>",
