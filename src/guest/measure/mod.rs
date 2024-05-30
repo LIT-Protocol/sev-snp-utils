@@ -93,13 +93,13 @@ pub fn snp_calc_launch_digest(vcpus: usize,
                               initrd_path: Option<&Path>,
                               append: Option<&str>) -> Result<LaunchDigest> {
 
-    log::warn!("========== CALCULATING LAUNCH DIGEST ===========");
-    log::warn!("vcpus: {:?}",vcpus.clone());
-    log::warn!("vcpu_type: {:?}",vcpu_type.clone());
-    log::warn!("ovmf_path: {:?}",ovmf_path.clone());
-    log::warn!("kernel_path: {:?}",kernel_path.clone());
-    log::warn!("initrd_path: {:?}",initrd_path.clone());
-    log::warn!("append: {:?}",append.clone());
+    println!("========== CALCULATING LAUNCH DIGEST ===========");
+    println!("vcpus: {:?}",vcpus.clone());
+    println!("vcpu_type: {:?}",vcpu_type.clone());
+    println!("ovmf_path: {:?}",ovmf_path.clone());
+    println!("kernel_path: {:?}",kernel_path.clone());
+    println!("initrd_path: {:?}",initrd_path.clone());
+    println!("append: {:?}",append.clone());
 
     let ovmf = OVMF::from_path(ovmf_path)?;
 
@@ -121,8 +121,8 @@ pub fn snp_calc_launch_digest(vcpus: usize,
         gctx.update_vmsa_page(&page[..])?;
     }
 
-    log::warn!("LD hex: {:?}",gctx.hex_ld());
-    log::warn!("========== END CALCULATING LAUNCH DIGEST ===========");
+    println!("LD hex: {:?}",gctx.hex_ld());
+    println!("========== END CALCULATING LAUNCH DIGEST ===========");
 
     Ok(gctx.take_ld())
 }
