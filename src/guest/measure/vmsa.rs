@@ -96,14 +96,14 @@ pub struct SevEsSaveArea {
     br_to: c_ulonglong,
     last_excp_from: c_ulonglong,
     last_excp_to: c_ulonglong,
-    reserved_7: [c_uchar; 80],
+    reserved_6: [c_uchar; 80],
     pkru: c_uint,
-    reserved_8: [c_uchar; 20],
-    reserved_9: c_ulonglong,
+    tsc_aux: c_uint,
+    reserved_7: [c_uchar; 24],
     rcx: c_ulonglong,
     rdx: c_ulonglong,
     rbx: c_ulonglong,
-    reserved_10: c_ulonglong,
+    reserved_8: c_ulonglong,
     rbp: c_ulonglong,
     rsi: c_ulonglong,
     rdi: c_ulonglong,
@@ -115,7 +115,7 @@ pub struct SevEsSaveArea {
     r13: c_ulonglong,
     r14: c_ulonglong,
     r15: c_ulonglong,
-    reserved_11: [c_uchar; 16],
+    reserved_9: [c_uchar; 16],
     guest_exit_info_1: c_ulonglong,
     guest_exit_info_2: c_ulonglong,
     guest_exit_int_info: c_ulonglong,
@@ -128,7 +128,7 @@ pub struct SevEsSaveArea {
     pcpu_id: c_ulonglong,
     event_inj: c_ulonglong,
     xcr0: c_ulonglong,
-    reserved_12: [c_uchar; 16],
+    reserved_10: [c_uchar; 16],
     x87_dp: c_ulonglong,
     mxcsr: c_uint,
     x87_ftw: c_ushort,
@@ -141,7 +141,7 @@ pub struct SevEsSaveArea {
     fpreg_x87: [c_uchar; 80],
     fpreg_xmm: [c_uchar; 256],
     fpreg_ymm: [c_uchar; 256],
-    unused: [c_uchar; 2448],
+    manual_padding: [c_uchar; 2448],
 }
 
 unsafe impl Zeroable for SevEsSaveArea {}
@@ -200,6 +200,8 @@ impl VMSA {
         area.rdx = vcpu_type.sig() as c_ulonglong;
         area.sev_features = sev_features;
         area.xcr0 = 0x1;
+        area.mxcsr = 0x1f80;
+        area.x87_fcw = 0x37f;
 
         area
     }
