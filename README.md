@@ -1,4 +1,4 @@
-# sev-snp-utils
+# sev-snp-utilities
 
 AMD SEV-SNP rust utils and primitives.
 
@@ -26,7 +26,7 @@ make test
 To request a report from a SEV-SNP capable CPU (the same functionality as `sev-guest-get-report`):
 
 ```rust
-use sev_snp_utils::{AttestationReport, Requester};
+use sev_snp_utilities::{AttestationReport, Requester};
 
 fn main() {
     let report = AttestationReport::request()
@@ -47,7 +47,7 @@ fn main() {
 Parse a guest_report.bin file from `sev-guest-get-report` (or one saved from `AttestationReport::request_raw()`):
 
 ```rust
-use sev_snp_utils::AttestationReport;
+use sev_snp_utilities::AttestationReport;
 
 fn main() {
     let report = AttestationReport::from_file("./guest_report.bin")
@@ -83,7 +83,7 @@ The verification process:
 Verify a guest_report.bin file:
 
 ```rust
-use sev_snp_utils::{AttestationReport, Verification, Policy};
+use sev_snp_utilities::{AttestationReport, Verification, Policy};
 
 async fn verify_guest() {
     let report = AttestationReport::from_file("./guest_report.bin")
@@ -115,7 +115,7 @@ let policy = Policy::new(
 You may also obtain the certificates to work with them directly:
 
 ```rust
-use sev_snp_utils::{
+use sev_snp_utilities::{
     AttestationReport, KdsCertificates, CertFormat,
     get_kds_ark_ask_certs_bytes, get_kds_ark_ask_certs,
     get_kds_ark_ask_certs_and_validate, validate_ark_ask_vcek_certs,
@@ -166,7 +166,7 @@ async fn get_certs() {
 ```rust
 use std::fs;
 use std::path::PathBuf;
-use sev_snp_utils::{
+use sev_snp_utilities::{
     calc_launch_digest, SevMode, CpuType
 };
 
@@ -205,7 +205,7 @@ openssl genpkey -algorithm ec -pkeyopt ec_paramgen_curve:"P-384" -out author-key
 
 ```rust
 use std::path::PathBuf;
-use sev_snp_utils::{
+use sev_snp_utilities::{
     create_identity_block, LaunchDigest, FamilyId, ImageId, ToBase64
 };
 
@@ -233,7 +233,7 @@ fn main() {
 
 ```rust
 use std::path::PathBuf;
-use sev_snp_utils::{
+use sev_snp_utilities::{
     IdBlock, LaunchDigest, FamilyId, ImageId, BlockSigner, ToBase64
 };
 
@@ -260,7 +260,7 @@ fn main() {
 
 ```rust
 use std::path::PathBuf;
-use sev_snp_utils::{
+use sev_snp_utilities::{
     fingerprint_id_key_as_hex
 };
 
@@ -317,8 +317,8 @@ let derived_key = DerivedKey::request(options).unwrap();
 Here is a MCVE of how to request a derived key from the firmware:
 
 ```rust
-use sev_snp_utils::guest::derived_key::get_derived_key::{DerivedKeyRequester, DerivedKeyRequestBuilder};
-use sev_snp_utils::guest::derived_key::derived_key::DerivedKey;
+use sev_snp_utilities::guest::derived_key::get_derived_key::{DerivedKeyRequester, DerivedKeyRequestBuilder};
+use sev_snp_utilities::guest::derived_key::derived_key::DerivedKey;
 
 fn main() {
     let options = DerivedKeyRequestBuilder::new()
