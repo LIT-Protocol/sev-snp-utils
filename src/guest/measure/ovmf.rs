@@ -25,6 +25,8 @@ pub enum SectionType {
     SnpSecMem = 1,
     SnpSecrets = 2,
     CPUID = 3,
+    SvsmCaa = 4,
+    SnpKernelHashes = 0x10
 }
 
 impl TryFrom<u8> for SectionType {
@@ -35,6 +37,8 @@ impl TryFrom<u8> for SectionType {
             1 => Ok(SectionType::SnpSecMem),
             2 => Ok(SectionType::SnpSecrets),
             3 => Ok(SectionType::CPUID),
+            4 => Ok(SectionType::SvsmCaa),
+            0x10 => Ok(SectionType::SnpKernelHashes),
             _ => {
                 return Err(conversion(format!("value: '{}' cannot map to SectionType", value), None));
             }
@@ -191,6 +195,21 @@ impl OVMF {
         &self.metadata_items
     }
 
+    pub fn has_metadata_section(&self, section_type: SectionType) -> bool {
+        // return any(True for s in self.metadata_items() if s.section_type() == section_type)
+        for item in self.metadata_items(){
+            if section_type == item.section_type().expect("item is valid, thus section type must parse") {
+                return true
+            }
+        }
+        false
+    }
+
+    pub fn is_sev_hashes_table_supported(&self) -> bool {
+        // XXX: Swallows the error
+        self.table.get(SEV_HASH_TABLE_RV_GUID).is_some() && (self.sev_hashes_table_gpa().unwrap_or(0) != 0)
+    }
+
     pub fn sev_hashes_table_gpa(&self) -> Result<i32> {
         match self.table_item(SEV_HASH_TABLE_RV_GUID) {
             Some(entry) => {
@@ -320,10 +339,10 @@ mod tests {
 
     #[test]
     fn ovmf_file_test() {
-        const TEST_OVMF_CODE_FILE: &str = "resources/test/measure/OVMF_CODE.fd";
+        const TEST_OVMF_FILE: &str = "resources/test/measure/OVMF.fd";
 
         let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_file.push(TEST_OVMF_CODE_FILE);
+        test_file.push(TEST_OVMF_FILE);
 
         let ovmf = OVMF::from_path(&test_file)
             .expect("failed to load OVMF file");
