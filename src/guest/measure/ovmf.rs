@@ -339,10 +339,10 @@ mod tests {
 
     #[test]
     fn ovmf_file_test() {
-        const TEST_OVMF_CODE_FILE: &str = "resources/test/measure/OVMF_CODE.fd";
+        const TEST_OVMF_FILE: &str = "resources/test/measure/OVMF.fd";
 
         let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_file.push(TEST_OVMF_CODE_FILE);
+        test_file.push(TEST_OVMF_FILE);
 
         let ovmf = OVMF::from_path(&test_file)
             .expect("failed to load OVMF file");

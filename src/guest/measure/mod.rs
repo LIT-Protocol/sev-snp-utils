@@ -93,14 +93,6 @@ pub fn snp_calc_launch_digest(vcpus: usize,
                               initrd_path: Option<&Path>,
                               append: Option<&str>) -> Result<LaunchDigest> {
 
-    println!("========== CALCULATING LAUNCH DIGEST ===========");
-    println!("vcpus: {:?}",vcpus.clone());
-    println!("vcpu_type: {:?}",vcpu_type.clone());
-    println!("ovmf_path: {:?}",ovmf_path.clone());
-    println!("kernel_path: {:?}",kernel_path.clone());
-    println!("initrd_path: {:?}",initrd_path.clone());
-    println!("append: {:?}",append.clone());
-
     let ovmf = OVMF::from_path(ovmf_path)?;
 
     let mut gctx = GCTX::new();
@@ -120,9 +112,6 @@ pub fn snp_calc_launch_digest(vcpus: usize,
     for page in vmsa.pages(vcpus) {
         gctx.update_vmsa_page(&page[..])?;
     }
-
-    println!("LD hex: {:?}",gctx.hex_ld());
-    println!("========== END CALCULATING LAUNCH DIGEST ===========");
 
     Ok(gctx.take_ld())
 }
@@ -178,6 +167,7 @@ pub(crate) fn sev_calc_launch_digest(ovmf_path: &Path,
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::str::FromStr;
     use crate::{calc_launch_digest, SevMode, CpuType};
     use crate::common::binary::fmt_bin_vec_to_hex;
 
@@ -244,5 +234,39 @@ mod tests {
         test_path.push(RESOURCES_TEST_DIR);
         test_path.push(path);
         test_path
+    }
+    #[test]
+    fn calc_launch_digest_manual_test() {
+        // /usr/bin/python3 /home/adam/git/virtee/sev-snp-measure/sev-snp-measure.py
+        // --mode snp --vcpus 4 --vcpu-type EPYC-v4 --ovmf amd/OVMF.fd --kernel ./guest-vmlinuz --initrd guest-initrd.img
+        //  --append 'console=ttyS0 earlyprintk=serial root=/dev/disk/by-uuid/bbf61fb4-b6ce-44af-ac57-1850cd708965 usbcore.nousb litos.build_id=5761633e litos.type=prov litos.env=dev litos.roothash=40a84c7f2ecf13d5c9b31cb50ab5d79ac9b9cf59a35d25fdf4034ce9caf062e76163dfd21064ff3cf27df72577ec880030bf3580a0fe7db32698bab70bec35cf litos.varhash=f85184ec9a09b8dbb1154c107c8f49f1297df17efe352ae55d92824998d8fc2a6d419c680cacce0d5ffcddf5377be8a11a3effc739c097d0bebd074e84c78883 litos.opt_ro=0 litos.opt_users=1 litos.opt_ssh=1'
+        // --guest-features=0x1 --vmm-type=QEMU --output-format=hex
+        let ovmf_path = PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/amd/OVMF.fd").unwrap(); // note: OVMF must have hashes table built in
+        let kernel_path = PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/guest-vmlinuz").unwrap();
+        let append_path = PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/guest-vmlinuz.cmdline").unwrap();
+        let initrd_path = PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/guest-initrd.img").unwrap();
+
+        let append = fs::read_to_string(&append_path)
+            .expect(format!("failed to read '{:?}'", &append_path).as_str());
+
+        for (
+            name, mode, vcpus, vcpu_type,
+            kp, ip, ap,
+            exp
+        ) in vec![
+            (
+                "like_sev_snp_measure", SevMode::SevSnp, 4, CpuType::EpycV4,
+                Some(kernel_path.as_path()), Some(initrd_path.as_path()), Some(append.as_str()),
+                "7dd49911d409d9b51141a45e886e32c84e27a02da9de0f33c2c009dc864c66f1492ac66fb7e927d112ab9eedb32907b3", // this is what sev-snp-measure outputs for these params
+            )
+        ] {
+            println!("Running test: {}", name);
+
+            let measure = calc_launch_digest(mode, vcpus, vcpu_type, ovmf_path.as_path(),
+                                             kp, ip, ap)
+                .expect("failed to call calc_launch_digest");
+
+            assert_eq!(fmt_bin_vec_to_hex(&measure), exp);
+        }
     }
 }
