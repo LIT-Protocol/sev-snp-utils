@@ -6,10 +6,13 @@ use async_std::path::PathBuf;
 use async_std::{fs, task};
 use bytes::Bytes;
 use reqwest::Client;
+use tokio::sync::Mutex;
 use tracing::{debug, trace};
 
 use crate::common::cache::cache_file_path;
 use crate::error;
+
+static FETCH_LOCK: Mutex<()> = Mutex::const_new(());
 
 pub async fn fetch_url(
     url: &str,
@@ -18,6 +21,11 @@ pub async fn fetch_url(
     retry_sleep_exponent_ms: u64,
 ) -> error::Result<Option<Bytes>> {
     trace!("fetch_url: url: {}", url);
+
+    let _gaurd = tokio::time::timeout(Duration::from_secs(10), FETCH_LOCK.lock())
+        .await
+        .map_err(|e| error::fetch(e, Some("failed to acquire fetch lock".to_string())))?;
+
     let client = create_http_client()?;
 
     let mut body: Option<Bytes> = None;
