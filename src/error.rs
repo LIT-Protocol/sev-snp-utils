@@ -19,8 +19,8 @@ struct Inner {
 
 impl Error {
     pub(crate) fn new<E>(kind: Kind, msg: Option<String>, source: Option<E>) -> Error
-        where
-            E: Into<BoxError>,
+    where
+        E: Into<BoxError>,
     {
         Error {
             inner: Box::new(Inner {
@@ -31,13 +31,12 @@ impl Error {
         }
     }
 
-    pub(crate) fn new_msg(kind: Kind, msg: Option<String>) -> Error
-    {
+    pub(crate) fn new_msg(kind: Kind, msg: Option<String>) -> Error {
         Error {
             inner: Box::new(Inner {
                 kind,
                 msg,
-                source: None
+                source: None,
             }),
         }
     }
@@ -75,6 +74,7 @@ impl fmt::Display for Error {
             Kind::Io => f.write_str("io error")?,
             Kind::Cert => f.write_str("cert error")?,
             Kind::OpenSSL => f.write_str("OpenSSL error")?,
+            Kind::LockTimeout => f.write_str("Lock Timeout error")?,
         };
 
         if let Some(msg) = &self.inner.msg {
@@ -102,7 +102,8 @@ pub(crate) enum Kind {
     Fetch,
     Io,
     Cert,
-    OpenSSL
+    OpenSSL,
+    LockTimeout,
 }
 
 // constructors
@@ -137,4 +138,8 @@ pub(crate) fn map_conversion_err<E: Into<BoxError>>(e: E) -> Error {
 
 pub(crate) fn openssl<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
     Error::new(Kind::OpenSSL, msg, Some(e))
+}
+
+pub(crate) fn lock_timeout<E: Into<BoxError>>(e: E, msg: Option<String>) -> Error {
+    Error::new(Kind::LockTimeout, msg, Some(e))
 }
