@@ -22,7 +22,7 @@ pub async fn fetch_url(
 ) -> error::Result<Option<Bytes>> {
     trace!("fetch_url: url: {}", url);
 
-    let _gaurd = tokio::time::timeout(Duration::from_secs(10), FETCH_LOCK.lock())
+    let _guard = tokio::time::timeout(Duration::from_secs(10), FETCH_LOCK.lock())
         .await
         .map_err(|e| error::fetch(e, Some("failed to acquire fetch lock".to_string())))?;
 
