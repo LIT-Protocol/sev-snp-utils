@@ -65,11 +65,11 @@ pub async fn fetch_url(
                         // Try retrieve the value from the headers
                         if let Ok(retry_interval_str) = retry_interval_value.to_str() {
                             // Parse value as string
-                           if let Ok(retry_interval_seconds) = retry_interval_str.parse::<u64>() {
-                               // Override the existing retry_sleep with the value given by AMD
-                               // Note: original logic will still be applied on next pass if AMD doesn't provide a value.
-                               retry_sleep_ms = retry_interval_seconds * 1000;
-                           }
+                            if let Ok(retry_interval_seconds) = retry_interval_str.parse::<u64>() {
+                                // Override the existing retry_sleep with the value given by AMD
+                                // Note: original logic will still be applied on next pass if AMD doesn't provide a value.
+                                retry_sleep_ms = retry_interval_seconds * 1000;
+                            }
                         }
                     }
                 }
