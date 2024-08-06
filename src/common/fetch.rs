@@ -24,7 +24,12 @@ pub async fn fetch_url(
 
     let _guard = tokio::time::timeout(Duration::from_secs(10), FETCH_LOCK.lock())
         .await
-        .map_err(|e| error::fetch(e, Some("failed to acquire fetch lock".to_string())))?;
+        .map_err(|e| {
+            error::lock_timeout(
+                e,
+                Some("failed to acquire fetch lock in 10 seconds".to_string()),
+            )
+        })?;
 
     let client = create_http_client()?;
 
