@@ -6,10 +6,13 @@ use async_std::path::PathBuf;
 use async_std::{fs, task};
 use bytes::Bytes;
 use reqwest::Client;
-use tracing::{debug, trace};
+use tokio::sync::Mutex;
+use tracing::{debug, trace, warn};
 
 use crate::common::cache::cache_file_path;
 use crate::error;
+
+static FETCH_LOCK: Mutex<()> = Mutex::const_new(());
 
 pub async fn fetch_url(
     url: &str,
@@ -18,6 +21,16 @@ pub async fn fetch_url(
     retry_sleep_exponent_ms: u64,
 ) -> error::Result<Option<Bytes>> {
     trace!("fetch_url: url: {}", url);
+
+    let _guard = tokio::time::timeout(Duration::from_secs(10), FETCH_LOCK.lock())
+        .await
+        .map_err(|e| {
+            error::lock_timeout(
+                e,
+                Some("failed to acquire fetch lock in 10 seconds".to_string()),
+            )
+        })?;
+
     let client = create_http_client()?;
 
     let mut body: Option<Bytes> = None;
@@ -52,11 +65,14 @@ pub async fn fetch_url(
                         // Try retrieve the value from the headers
                         if let Ok(retry_interval_str) = retry_interval_value.to_str() {
                             // Parse value as string
-                           if let Ok(retry_interval_seconds) = retry_interval_str.parse::<u64>() {
-                               // Override the existing retry_sleep with the value given by AMD
-                               // Note: original logic will still be applied on next pass if AMD doesn't provide a value.
-                               retry_sleep_ms = retry_interval_seconds * 1000;
-                           }
+                            if let Ok(retry_interval_seconds) = retry_interval_str.parse::<u64>() {
+                                // Override the existing retry_sleep with the value given by AMD
+                                // Note: original logic will still be applied on next pass if AMD doesn't provide a value.
+                                retry_sleep_ms = retry_interval_seconds * 1000;
+                                if retry_sleep_ms >= 1_000 {
+                                    warn!("AMD is requesting a retry interval of over 1 second.")
+                                }
+                            }
                         }
                     }
                 }
@@ -70,7 +86,13 @@ pub async fn fetch_url(
             return Err(error::fetch(err_msg, None));
         }
 
-        debug!("{} (attempt {} of {})", &err_msg, attempt + 1, attempts);
+        debug!(
+            "{} (attempt {} of {}) waiting for {}ms",
+            &err_msg,
+            attempt + 1,
+            attempts,
+            retry_sleep_ms
+        );
 
         task::sleep(Duration::from_millis(retry_sleep_ms)).await;
         retry_sleep_ms = retry_sleep_ms * retry_sleep_exponent_ms / 1000;
