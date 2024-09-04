@@ -49,7 +49,7 @@ impl Error {
 
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut builder = f.debug_struct("sev_snp_utils::Error");
+        let mut builder = f.debug_struct("sev_snp_utilities::Error");
 
         builder.field("kind", &self.inner.kind);
 

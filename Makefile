@@ -1,4 +1,4 @@
-SEV_SNP_CACHE_PATH := /tmp/sev-snp-utils-test
+SEV_SNP_CACHE_PATH := /tmp/sev-snp-utilities-test
 
 .PHONY: test
 test:
