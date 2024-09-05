@@ -45,6 +45,10 @@ impl Error {
     pub(crate) fn into_io(self) -> io::Error {
         io::Error::new(io::ErrorKind::Other, self)
     }
+
+    pub fn kind(&self) -> &Kind {
+        &self.inner.kind
+    }
 }
 
 impl fmt::Debug for Error {
@@ -96,7 +100,7 @@ impl StdError for Error {
 }
 
 #[derive(Debug)]
-pub(crate) enum Kind {
+pub enum Kind {
     Conversion,
     Validation,
     Fetch,
