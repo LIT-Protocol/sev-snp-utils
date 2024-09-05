@@ -46,8 +46,8 @@ impl Error {
         io::Error::new(io::ErrorKind::Other, self)
     }
 
-    pub fn kind(&self) -> &Kind {
-        &self.inner.kind
+    pub fn kind(&self) -> Kind {
+        (&self.inner.kind).clone()
     }
 }
 
@@ -99,7 +99,7 @@ impl StdError for Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Kind {
     Conversion,
     Validation,
