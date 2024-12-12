@@ -38,6 +38,9 @@ base64 = { version = "0.20.0-alpha.1" }
 hex = { version = "0.4.3" }
 once_cell = { version = "1.17.0" }
 tracing = "0.1.40"
+codicon = "3.0.0"
+serde = { version = "1.0.216", features = ["derive"] }
+serde-big-array = "0.5.1"
 
 [dependencies.uuid]
 version = "1.2.2"
