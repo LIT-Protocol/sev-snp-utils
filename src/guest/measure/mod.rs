@@ -20,11 +20,11 @@ pub mod ovmf;
 pub mod sev_hashes;
 pub mod types;
 pub mod vcpu_types;
+pub mod vmsa;
 #[cfg(not(feature = "vmsa-sev"))]
 pub mod vmsa_builtin;
 #[cfg(feature = "vmsa-sev")]
 pub mod vmsa_sev;
-
 const PAGE_MASK: usize = 0xfff;
 
 pub fn calc_launch_digest(

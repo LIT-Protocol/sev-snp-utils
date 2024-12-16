@@ -1,1 +1,1 @@
-pub use sev::vmsa::*;
+pub use sev::vmsa::{Vmsa as VMSA, *};

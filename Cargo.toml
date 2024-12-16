@@ -18,7 +18,7 @@ exclude = ["resources/test/"]
 [features]
 default = []
 trust-dns = ["reqwest/trust-dns"]
-vmsa-sev = []
+vmsa-sev = ["sev"]
 
 [dependencies]
 libc = { version = "0.2.134" }
