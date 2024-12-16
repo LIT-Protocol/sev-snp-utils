@@ -18,6 +18,7 @@ exclude = ["resources/test/"]
 [features]
 default = []
 trust-dns = ["reqwest/trust-dns"]
+vmsa-sev = []
 
 [dependencies]
 libc = { version = "0.2.134" }
@@ -38,6 +39,7 @@ base64 = { version = "0.20.0-alpha.1" }
 hex = { version = "0.4.3" }
 once_cell = { version = "1.17.0" }
 tracing = "0.1.40"
+sev = { version = "5.0.0", features = ["openssl"], optional = true }
 
 [dependencies.uuid]
 version = "1.2.2"

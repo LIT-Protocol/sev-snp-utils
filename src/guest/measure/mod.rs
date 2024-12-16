@@ -1,14 +1,13 @@
 /// This feature has been ported from: https://github.com/IBM/sev-snp-measure
 /// full credit goes to the original authors.
-
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use crate::error::{Result,validation};
+use crate::error::{validation, Result};
 use crate::guest::identity::LaunchDigest;
 use crate::guest::measure::gctx::GCTX;
-use crate::guest::measure::ovmf::{OVMF, SectionType};
+use crate::guest::measure::ovmf::{SectionType, OVMF};
 use crate::guest::measure::sev_hashes::SevHashes;
 use crate::guest::measure::types::SevMode;
 use crate::guest::measure::vcpu_types::CpuType;
@@ -16,88 +15,131 @@ use crate::guest::measure::vmsa::VMSA;
 
 use self::ovmf::OvmfSevMetadataSectionDesc;
 
-pub mod types;
 pub mod gctx;
 pub mod ovmf;
-pub mod vmsa;
-pub mod vcpu_types;
 pub mod sev_hashes;
+pub mod types;
+pub mod vcpu_types;
+#[cfg(not(feature = "vmsa-sev"))]
+pub mod vmsa_builtin;
+#[cfg(feature = "vmsa-sev")]
+pub mod vmsa_sev;
 
 const PAGE_MASK: usize = 0xfff;
 
-pub fn calc_launch_digest(mode: SevMode,
-                          vcpus: usize,
-                          vcpu_type: CpuType,
-                          ovmf_path: &Path,
-                          kernel_path: Option<&Path>,
-                          initrd_path: Option<&Path>,
-                          append: Option<&str>) -> Result<Vec<u8>> {
+pub fn calc_launch_digest(
+    mode: SevMode,
+    vcpus: usize,
+    vcpu_type: CpuType,
+    ovmf_path: &Path,
+    kernel_path: Option<&Path>,
+    initrd_path: Option<&Path>,
+    append: Option<&str>,
+) -> Result<Vec<u8>> {
     match mode {
-        SevMode::Sev => sev_calc_launch_digest(ovmf_path,
-                                               kernel_path, initrd_path, append),
-        SevMode::SevEs => seves_calc_launch_digest(vcpus, vcpu_type, ovmf_path,
-                                                   kernel_path, initrd_path, append),
-        SevMode::SevSnp => Ok(
-            snp_calc_launch_digest(vcpus, vcpu_type, ovmf_path,
-                                   kernel_path, initrd_path, append)?.to_vec()
+        SevMode::Sev => sev_calc_launch_digest(ovmf_path, kernel_path, initrd_path, append),
+        SevMode::SevEs => seves_calc_launch_digest(
+            vcpus,
+            vcpu_type,
+            ovmf_path,
+            kernel_path,
+            initrd_path,
+            append,
         ),
+        SevMode::SevSnp => Ok(snp_calc_launch_digest(
+            vcpus,
+            vcpu_type,
+            ovmf_path,
+            kernel_path,
+            initrd_path,
+            append,
+        )?
+        .to_vec()),
     }
 }
 
-pub(crate) fn snp_update_kernel_hashes(gctx: &mut GCTX, ovmf: &OVMF, sev_hashes: &Option<SevHashes>, gpa: u64, size: u64) -> Result<()> {
+pub(crate) fn snp_update_kernel_hashes(
+    gctx: &mut GCTX,
+    ovmf: &OVMF,
+    sev_hashes: &Option<SevHashes>,
+    gpa: u64,
+    size: u64,
+) -> Result<()> {
     if let Some(sev_hashes) = sev_hashes {
-    let sev_hashes_table_gpa = ovmf.sev_hashes_table_gpa()? as usize;
-    let offset_in_page = sev_hashes_table_gpa & PAGE_MASK;
-    let sev_hashes_page = sev_hashes.construct_page(offset_in_page)?;
-    if sev_hashes_page.len() != size as usize {
-        return Err(validation(format!("hashes page is {} bytes when it should be {size} bytes",sev_hashes_page.len()),None))
-    }
+        let sev_hashes_table_gpa = ovmf.sev_hashes_table_gpa()? as usize;
+        let offset_in_page = sev_hashes_table_gpa & PAGE_MASK;
+        let sev_hashes_page = sev_hashes.construct_page(offset_in_page)?;
+        if sev_hashes_page.len() != size as usize {
+            return Err(validation(
+                format!(
+                    "hashes page is {} bytes when it should be {size} bytes",
+                    sev_hashes_page.len()
+                ),
+                None,
+            ));
+        }
         gctx.update_normal_pages(gpa, sev_hashes_page.as_slice())?
-    }
-    else {
+    } else {
         gctx.update_zero_pages(gpa, size as usize)?
     }
     Ok(())
 }
 
-pub(crate) fn snp_update_section(desc: &OvmfSevMetadataSectionDesc, gctx: &mut GCTX, ovmf: &OVMF, sev_hashes: &Option<SevHashes>) -> Result<()> {
+pub(crate) fn snp_update_section(
+    desc: &OvmfSevMetadataSectionDesc,
+    gctx: &mut GCTX,
+    ovmf: &OVMF,
+    sev_hashes: &Option<SevHashes>,
+) -> Result<()> {
     match desc.section_type()? {
-        SectionType::SnpSecMem =>
-            gctx.update_zero_pages(desc.gpa() as u64, desc.size() as usize),
-        SectionType::SnpSecrets =>
-            gctx.update_secrets_page(desc.gpa() as u64),
+        SectionType::SnpSecMem => gctx.update_zero_pages(desc.gpa() as u64, desc.size() as usize),
+        SectionType::SnpSecrets => gctx.update_secrets_page(desc.gpa() as u64),
         SectionType::CPUID =>
-            // TODO: Add VMMType if not vmm_type == VMMType.ec2:
-            gctx.update_cpuid_page(desc.gpa() as u64),
-        SectionType::SvsmCaa =>
-            gctx.update_zero_pages(desc.gpa() as u64, desc.size() as usize),
-        SectionType::SnpKernelHashes =>
-            snp_update_kernel_hashes(gctx, ovmf, sev_hashes, desc.gpa() as u64, desc.size() as u64)
+        // TODO: Add VMMType if not vmm_type == VMMType.ec2:
+        {
+            gctx.update_cpuid_page(desc.gpa() as u64)
+        }
+        SectionType::SvsmCaa => gctx.update_zero_pages(desc.gpa() as u64, desc.size() as usize),
+        SectionType::SnpKernelHashes => snp_update_kernel_hashes(
+            gctx,
+            ovmf,
+            sev_hashes,
+            desc.gpa() as u64,
+            desc.size() as u64,
+        ),
     }
 }
-pub(crate) fn snp_update_metadata_pages(gctx: &mut GCTX, ovmf: &OVMF, sev_hashes: Option<SevHashes>) -> Result<()> {
+pub(crate) fn snp_update_metadata_pages(
+    gctx: &mut GCTX,
+    ovmf: &OVMF,
+    sev_hashes: Option<SevHashes>,
+) -> Result<()> {
     for desc in ovmf.metadata_items() {
-            snp_update_section(desc, gctx, ovmf, &sev_hashes)?
-        }
-        // TODO if vmm_type == VMMType.ec2:
-        if sev_hashes.is_some() && !ovmf.has_metadata_section(SectionType::SnpKernelHashes){
-            return Err(validation("Kernel specified but OVMF metadata doesn't include SNP_KERNEL_HASHES section",None))
-        }
+        snp_update_section(desc, gctx, ovmf, &sev_hashes)?
+    }
+    // TODO if vmm_type == VMMType.ec2:
+    if sev_hashes.is_some() && !ovmf.has_metadata_section(SectionType::SnpKernelHashes) {
+        return Err(validation(
+            "Kernel specified but OVMF metadata doesn't include SNP_KERNEL_HASHES section",
+            None,
+        ));
+    }
     Ok(())
 }
 
-pub fn snp_calc_launch_digest(vcpus: usize,
-                              vcpu_type: CpuType,
-                              ovmf_path: &Path,
-                              kernel_path: Option<&Path>,
-                              initrd_path: Option<&Path>,
-                              append: Option<&str>) -> Result<LaunchDigest> {
-
+pub fn snp_calc_launch_digest(
+    vcpus: usize,
+    vcpu_type: CpuType,
+    ovmf_path: &Path,
+    kernel_path: Option<&Path>,
+    initrd_path: Option<&Path>,
+    append: Option<&str>,
+) -> Result<LaunchDigest> {
     let ovmf = OVMF::from_path(ovmf_path)?;
 
     let mut gctx = GCTX::new();
     // TODO:  https://github.com/virtee/sev-snp-measure/blob/9dabc4b6a853ec5a41b20d899ae2b68d8f0b81c0/sevsnpmeasure/guest.py#L100
-    // add precomputed ovmf hash optional 
+    // add precomputed ovmf hash optional
     gctx.update_normal_pages(ovmf.gpa(), ovmf.data())?;
 
     let mut sev_hashes = None;
@@ -107,8 +149,7 @@ pub fn snp_calc_launch_digest(vcpus: usize,
 
     snp_update_metadata_pages(&mut gctx, &ovmf, sev_hashes)?;
 
-    let vmsa = VMSA::new(SevMode::SevSnp,
-                         ovmf.sev_es_reset_eip()?, vcpu_type);
+    let vmsa = VMSA::new(SevMode::SevSnp, ovmf.sev_es_reset_eip()?, vcpu_type);
     for page in vmsa.pages(vcpus) {
         gctx.update_vmsa_page(&page[..])?;
     }
@@ -116,26 +157,32 @@ pub fn snp_calc_launch_digest(vcpus: usize,
     Ok(gctx.take_ld())
 }
 
-pub(crate) fn seves_calc_launch_digest(vcpus: usize,
-                                       vcpu_type: CpuType,
-                                       ovmf_path: &Path,
-                                       kernel_path: Option<&Path>,
-                                       initrd_path: Option<&Path>,
-                                       append: Option<&str>) -> Result<Vec<u8>> {
+pub(crate) fn seves_calc_launch_digest(
+    vcpus: usize,
+    vcpu_type: CpuType,
+    ovmf_path: &Path,
+    kernel_path: Option<&Path>,
+    initrd_path: Option<&Path>,
+    append: Option<&str>,
+) -> Result<Vec<u8>> {
     let mut launch_hash = Sha256::new();
     let ovmf = OVMF::from_path(ovmf_path)?;
     launch_hash.update(ovmf.data());
 
     if let Some(kernel_path) = kernel_path {
-        if !ovmf.is_sev_hashes_table_supported(){
-            return Err(validation(format!("Kernel specified but OVMF doesn't support kernel/initrd/cmdline measurement"),None))
+        if !ovmf.is_sev_hashes_table_supported() {
+            return Err(validation(
+                format!(
+                    "Kernel specified but OVMF doesn't support kernel/initrd/cmdline measurement"
+                ),
+                None,
+            ));
         }
-        let sev_hashes_table = SevHashes::new(kernel_path, initrd_path, append)?
-            .construct_table()?;
+        let sev_hashes_table =
+            SevHashes::new(kernel_path, initrd_path, append)?.construct_table()?;
         launch_hash.update(&sev_hashes_table);
     }
-    let vmsa = VMSA::new(SevMode::SevEs,
-                         ovmf.sev_es_reset_eip()?, vcpu_type);
+    let vmsa = VMSA::new(SevMode::SevEs, ovmf.sev_es_reset_eip()?, vcpu_type);
     for page in vmsa.pages(vcpus) {
         launch_hash.update(&page);
     }
@@ -143,20 +190,27 @@ pub(crate) fn seves_calc_launch_digest(vcpus: usize,
     Ok(launch_hash.finalize().to_vec())
 }
 
-pub(crate) fn sev_calc_launch_digest(ovmf_path: &Path,
-                                     kernel_path: Option<&Path>,
-                                     initrd_path: Option<&Path>,
-                                     append: Option<&str>) -> Result<Vec<u8>> {
+pub(crate) fn sev_calc_launch_digest(
+    ovmf_path: &Path,
+    kernel_path: Option<&Path>,
+    initrd_path: Option<&Path>,
+    append: Option<&str>,
+) -> Result<Vec<u8>> {
     let mut launch_hash = Sha256::new();
     let ovmf = OVMF::from_path(ovmf_path)?;
     launch_hash.update(ovmf.data());
 
     if let Some(kernel_path) = kernel_path {
-        if !ovmf.is_sev_hashes_table_supported(){
-            return Err(validation(format!("Kernel specified but OVMF doesn't support kernel/initrd/cmdline measurement"),None))
+        if !ovmf.is_sev_hashes_table_supported() {
+            return Err(validation(
+                format!(
+                    "Kernel specified but OVMF doesn't support kernel/initrd/cmdline measurement"
+                ),
+                None,
+            ));
         }
-        let sev_hashes_table = SevHashes::new(kernel_path, initrd_path, append)?
-            .construct_table()?;
+        let sev_hashes_table =
+            SevHashes::new(kernel_path, initrd_path, append)?.construct_table()?;
         launch_hash.update(&sev_hashes_table);
     }
 
@@ -165,11 +219,11 @@ pub(crate) fn sev_calc_launch_digest(ovmf_path: &Path,
 
 #[cfg(test)]
 mod tests {
+    use crate::common::binary::fmt_bin_vec_to_hex;
+    use crate::{calc_launch_digest, CpuType, SevMode};
     use std::fs;
     use std::path::PathBuf;
     use std::str::FromStr;
-    use crate::{calc_launch_digest, SevMode, CpuType};
-    use crate::common::binary::fmt_bin_vec_to_hex;
 
     const RESOURCES_TEST_DIR: &str = "resources/test/measure";
 
@@ -241,19 +295,23 @@ mod tests {
         // --mode snp --vcpus 4 --vcpu-type EPYC-v4 --ovmf amd/OVMF.fd --kernel ./guest-vmlinuz --initrd guest-initrd.img
         //  --append 'console=ttyS0 earlyprintk=serial root=/dev/disk/by-uuid/bbf61fb4-b6ce-44af-ac57-1850cd708965 usbcore.nousb litos.build_id=5761633e litos.type=prov litos.env=dev litos.roothash=40a84c7f2ecf13d5c9b31cb50ab5d79ac9b9cf59a35d25fdf4034ce9caf062e76163dfd21064ff3cf27df72577ec880030bf3580a0fe7db32698bab70bec35cf litos.varhash=f85184ec9a09b8dbb1154c107c8f49f1297df17efe352ae55d92824998d8fc2a6d419c680cacce0d5ffcddf5377be8a11a3effc739c097d0bebd074e84c78883 litos.opt_ro=0 litos.opt_users=1 litos.opt_ssh=1'
         // --guest-features=0x1 --vmm-type=QEMU --output-format=hex
-        let ovmf_path = PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/amd/OVMF.fd").unwrap(); // note: OVMF must have hashes table built in
-        let kernel_path = PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/guest-vmlinuz").unwrap();
-        let append_path = PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/guest-vmlinuz.cmdline").unwrap();
-        let initrd_path = PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/guest-initrd.img").unwrap();
+        let ovmf_path =
+            PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/amd/OVMF.fd").unwrap(); // note: OVMF must have hashes table built in
+        let kernel_path =
+            PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/guest-vmlinuz")
+                .unwrap();
+        let append_path = PathBuf::from_str(
+            "/var/lit/os/guest/templates/dev/node/372ea29f/guest-vmlinuz.cmdline",
+        )
+        .unwrap();
+        let initrd_path =
+            PathBuf::from_str("/var/lit/os/guest/templates/dev/node/372ea29f/guest-initrd.img")
+                .unwrap();
 
         let append = fs::read_to_string(&append_path)
             .expect(format!("failed to read '{:?}'", &append_path).as_str());
 
-        for (
-            name, mode, vcpus, vcpu_type,
-            kp, ip, ap,
-            exp
-        ) in vec![
+        for (name, mode, vcpus, vcpu_type, kp, ip, ap, exp) in vec![
             (
                 "like_sev_snp_measure", SevMode::SevSnp, 4, CpuType::EpycV4,
                 Some(kernel_path.as_path()), Some(initrd_path.as_path()), Some(append.as_str()),
@@ -262,9 +320,9 @@ mod tests {
         ] {
             println!("Running test: {}", name);
 
-            let measure = calc_launch_digest(mode, vcpus, vcpu_type, ovmf_path.as_path(),
-                                             kp, ip, ap)
-                .expect("failed to call calc_launch_digest");
+            let measure =
+                calc_launch_digest(mode, vcpus, vcpu_type, ovmf_path.as_path(), kp, ip, ap)
+                    .expect("failed to call calc_launch_digest");
 
             assert_eq!(fmt_bin_vec_to_hex(&measure), exp);
         }
