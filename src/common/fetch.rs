@@ -20,7 +20,7 @@ pub async fn fetch_url(
     retry_sleep_ms: u64,
     retry_sleep_exponent_ms: u64,
 ) -> error::Result<Option<Bytes>> {
-    trace!("fetch_url: url: {}", url);
+    println!("fetch_url: url: {}", url);
 
     let _guard = tokio::time::timeout(Duration::from_secs(10), FETCH_LOCK.lock())
         .await
@@ -86,7 +86,7 @@ pub async fn fetch_url(
             return Err(error::fetch(err_msg, None));
         }
 
-        debug!(
+        println!(
             "{} (attempt {} of {}) waiting for {}ms",
             &err_msg,
             attempt + 1,
@@ -108,7 +108,7 @@ pub async fn fetch_url_cached(
     retry_sleep_ms: u64,
     retry_sleep_exponent_ms: u64,
 ) -> error::Result<Bytes> {
-    trace!("fetch_url_cached: url: {}, path: {}", url, path);
+    println!("fetch_url_cached: url: {}, path: {}", url, path);
     let full_path = cache_file_path(path, true).await;
     if full_path.exists().await {
         return read_cached_file(full_path).await;

@@ -21,7 +21,7 @@ trust-dns = ["reqwest/trust-dns"]
 
 [dependencies]
 libc = { version = "0.2.134" }
-async-std = { version = "1.12.0" }
+async-std = { version = "1.13.1" }
 async-trait = { version = "0.1.57" }
 byteorder = { version = "1.4.3" }
 bytemuck = { version = "1.12.3" }
@@ -38,6 +38,7 @@ base64 = { version = "0.20.0-alpha.1" }
 hex = { version = "0.4.3" }
 once_cell = { version = "1.17.0" }
 tracing = "0.1.40"
+moka = {version = "0.12.10", features = ["future"] }
 
 [dependencies.uuid]
 version = "1.2.2"
