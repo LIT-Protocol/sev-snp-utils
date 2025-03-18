@@ -1,14 +1,18 @@
-use std::io::{Read, Cursor};
+use byteorder::{LittleEndian, ReadBytesExt};
 use std::fs::File;
 use std::io::Seek;
+use std::io::{Cursor, Read};
 use std::os::fd::AsRawFd;
-use byteorder::{LittleEndian, ReadBytesExt};
-use log::{trace};
+use tracing::trace;
 
 use crate::common::binary::read_exact_to_bin_vec;
-use crate::guest::ioctl::guest_request_types::{SNP_REPORT_USER_DATA_MAX_BYTES, SNPGuestRequestGetReportIOCTL, SEV_GUEST_DEVICE, snp_get_report, SNP_REPORT_RESP_HEADER_BYTES, SNP_REPORT_MSG_RESP_RESERVED_BYTES};
+use crate::error::{io, validation, Result};
+use crate::guest::ioctl::guest_request_types::{
+    snp_get_report, SNPGuestRequestGetReportIOCTL, SEV_GUEST_DEVICE,
+    SNP_REPORT_MSG_RESP_RESERVED_BYTES, SNP_REPORT_RESP_HEADER_BYTES,
+    SNP_REPORT_USER_DATA_MAX_BYTES,
+};
 use crate::{error, AttestationReport};
-use crate::error::{Result as Result, io, validation};
 
 #[derive(Debug)]
 pub struct RequestAttestationReportMsgHeader {
@@ -19,16 +23,17 @@ pub struct RequestAttestationReportMsgHeader {
 
 impl RequestAttestationReportMsgHeader {
     pub fn from_reader(mut rdr: impl Read + Seek) -> Result<Self> {
-        let status = rdr.read_u32::<LittleEndian>()
-            .map_err(error::map_io_err)?;
-        let report_size = rdr.read_u32::<LittleEndian>()
-            .map_err(error::map_io_err)?;
+        let status = rdr.read_u32::<LittleEndian>().map_err(error::map_io_err)?;
+        let report_size = rdr.read_u32::<LittleEndian>().map_err(error::map_io_err)?;
         let reserved = read_exact_to_bin_vec(&mut rdr, SNP_REPORT_MSG_RESP_RESERVED_BYTES)?;
 
         Ok(RequestAttestationReportMsgHeader {
             status,
             report_size,
-            reserved: reserved.as_slice().try_into().map_err(error::map_conversion_err)?,
+            reserved: reserved
+                .as_slice()
+                .try_into()
+                .map_err(error::map_conversion_err)?,
         })
     }
 }
@@ -46,10 +51,16 @@ impl Requester for AttestationReport {
         }
 
         // Initialize data structures.
-        let mut snp_guest_request_get_report_ioctl = SNPGuestRequestGetReportIOCTL::new_with_user_data(data.try_into().map_err(error::map_conversion_err)?);
-    
+        let mut snp_guest_request_get_report_ioctl =
+            SNPGuestRequestGetReportIOCTL::new_with_user_data(
+                data.try_into().map_err(error::map_conversion_err)?,
+            );
+
         // Open the /dev/sev-guest device.
-        let fd = File::options().read(true).write(true).open(SEV_GUEST_DEVICE)
+        let fd = File::options()
+            .read(true)
+            .write(true)
+            .open(SEV_GUEST_DEVICE)
             .map_err(|e| error::io(e, None))?;
 
         // Issue the guest request IOCTL.
@@ -58,7 +69,13 @@ impl Requester for AttestationReport {
             let ret_code = snp_get_report(fd.as_raw_fd(), &mut snp_guest_request_get_report_ioctl)
                 .map_err(|e| error::io(e, Some("Error sending IOCTL".into())))?;
             if ret_code == -1 {
-                return Err(io(format!("Firmware error: {}", snp_guest_request_get_report_ioctl.fw_err), None));
+                return Err(io(
+                    format!(
+                        "Firmware error: {}",
+                        snp_guest_request_get_report_ioctl.fw_err
+                    ),
+                    None,
+                ));
             }
         }
         //trace!("Received IOCTL response: {:?}", snp_guest_request_get_report_ioctl);
@@ -67,10 +84,17 @@ impl Requester for AttestationReport {
         let mut report_msg_bytes = snp_guest_request_get_report_ioctl.resp_data.data.to_vec();
         let report_msg_header_bytes = report_msg_bytes.drain(0..SNP_REPORT_RESP_HEADER_BYTES);
         let report_msg_header_rdr = Cursor::new(report_msg_header_bytes);
-        let report_msg_header = RequestAttestationReportMsgHeader::from_reader(report_msg_header_rdr)?;
+        let report_msg_header =
+            RequestAttestationReportMsgHeader::from_reader(report_msg_header_rdr)?;
         //trace!("Report Message Header: {:?}", report_msg_header);
         if report_msg_header.status != 0 {
-            return Err(io(format!("Non-zero status code {:?} with the following firmware error {:?}", report_msg_header.status, snp_guest_request_get_report_ioctl.fw_err), None));
+            return Err(io(
+                format!(
+                    "Non-zero status code {:?} with the following firmware error {:?}",
+                    report_msg_header.status, snp_guest_request_get_report_ioctl.fw_err
+                ),
+                None,
+            ));
         }
 
         Ok(report_msg_bytes)
@@ -78,7 +102,9 @@ impl Requester for AttestationReport {
 
     fn request(data: &[u8]) -> Result<AttestationReport> {
         let attestation_report_bytes = Self::request_raw(data)?;
-        Ok(AttestationReport::from_reader(Cursor::new(attestation_report_bytes))?)
+        Ok(AttestationReport::from_reader(Cursor::new(
+            attestation_report_bytes,
+        ))?)
     }
 }
 
@@ -95,10 +121,14 @@ mod tests {
     #[test]
     fn test_snp_report_msg_resp_from_reader() {
         let file_data = fs::read(TEST_MSG_RESP_BIN).unwrap();
-        let snp_report_msg_resp = RequestAttestationReportMsgHeader::from_reader(Cursor::new(file_data)).unwrap();
-        
+        let snp_report_msg_resp =
+            RequestAttestationReportMsgHeader::from_reader(Cursor::new(file_data)).unwrap();
+
         assert_eq!(snp_report_msg_resp.status, 0);
         assert_eq!(snp_report_msg_resp.report_size, 1184);
-        assert_eq!(snp_report_msg_resp.reserved, [0; SNP_REPORT_MSG_RESP_RESERVED_BYTES]);
+        assert_eq!(
+            snp_report_msg_resp.reserved,
+            [0; SNP_REPORT_MSG_RESP_RESERVED_BYTES]
+        );
     }
 }

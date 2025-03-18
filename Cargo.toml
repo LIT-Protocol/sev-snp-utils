@@ -11,7 +11,7 @@ repository = "https://github.com/LIT-Protocol/sev-snp-utils"
 readme = "README.md"
 keywords = ["attestation", "AMD", "SEV-SNP"]
 categories = ["api-bindings", "hardware-support"]
-version = "1.5.1"
+version = "1.6.0"
 edition = "2021"
 exclude = ["resources/test/"]
 
@@ -21,7 +21,7 @@ trust-dns = ["reqwest/trust-dns"]
 
 [dependencies]
 libc = { version = "0.2.134" }
-async-std = { version = "1.12.0" }
+async-std = { version = "1.13.1" }
 async-trait = { version = "0.1.57" }
 byteorder = { version = "1.4.3" }
 bytemuck = { version = "1.12.3" }
@@ -38,6 +38,7 @@ base64 = { version = "0.20.0-alpha.1" }
 hex = { version = "0.4.3" }
 once_cell = { version = "1.17.0" }
 tracing = "0.1.40"
+moka = {version = "0.12.10", features = ["future"] }
 
 [dependencies.uuid]
 version = "1.2.2"

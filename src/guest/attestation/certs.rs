@@ -1,23 +1,22 @@
 use async_std::fs;
-use async_std::fs::{File, OpenOptions};
 use async_std::path::PathBuf;
-use async_std::sync::Mutex;
 use async_trait::async_trait;
 use bytes::Bytes;
 use cached::once_cell::sync::Lazy;
-use cached::{Cached, SizedCache};
+use moka::future::Cache;
 use openssl::ec::EcKey;
 use openssl::pkey::Public;
 use openssl::x509::X509;
 use pem::parse_many;
 use std::env;
-use tracing::{trace, warn};
+use tokio::sync::RwLock;
+use tracing::trace;
 
-use crate::common::cache::{cache_dir_path, cache_file_path};
+use crate::common::cache::cache_dir_path;
 use crate::common::cert::{x509_to_ec_key, x509_validate_signature};
 use crate::common::env::{ENV_CACHE_ENTRIES_VCEK_DEFAULT, ENV_CACHE_ENTRIES_VCEK_KEY};
 use crate::common::fetch::fetch_url_cached;
-use crate::common::file::{flock, write_bytes_to_file};
+use crate::common::file::write_bytes_to_file;
 use crate::common::pem::{der_to_pem, PEM_CERTIFICATE};
 use crate::error::Result;
 use crate::{error, AttestationReport};
@@ -46,11 +45,10 @@ const ASK_PEM_FILENAME: &str = "ask.pem";
 const ARK_DER_FILENAME: &str = "ark.der";
 const ARK_PEM_FILENAME: &str = "ark.pem";
 
-const ARK_FETCH_LOCK_FILE: &str = "ark_fetch.lock";
+static ARK_CERT_CACHE: Lazy<Cache<String, (X509, X509)>> =
+    Lazy::new(|| Cache::builder().max_capacity(10).build());
 
-static ARK_CERT_CACHE: Lazy<Mutex<SizedCache<String, (X509, X509)>>> =
-    Lazy::new(|| Mutex::new(SizedCache::with_size(10)));
-static VCEK_CERT_CACHE: Lazy<Mutex<SizedCache<String, X509>>> = Lazy::new(|| {
+static VCEK_CERT_CACHE: Lazy<Cache<String, X509>> = Lazy::new(|| {
     let cache_size = env::var(ENV_CACHE_ENTRIES_VCEK_KEY)
         .unwrap_or(ENV_CACHE_ENTRIES_VCEK_DEFAULT.to_string())
         .parse::<usize>()
@@ -62,8 +60,10 @@ static VCEK_CERT_CACHE: Lazy<Mutex<SizedCache<String, X509>>> = Lazy::new(|| {
             .as_str(),
         );
 
-    Mutex::new(SizedCache::with_size(cache_size))
+    Cache::builder().max_capacity(cache_size as u64).build()
 });
+
+static ARK_FETCH_LOCK: Lazy<RwLock<()>> = Lazy::new(|| RwLock::new(()));
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[allow(unused)]
@@ -160,13 +160,12 @@ pub async fn get_kds_ark_ask_certs_bytes(
                 )),
             )
         })?;
-
         return Ok((Bytes::from(ark_bytes), Bytes::from(ask_bytes)));
     }
 
     {
         // Try read lock first and check if exists.
-        let _guard = ArkFetchLockFile::read().await?;
+        let _guard = ARK_FETCH_LOCK.read().await;
 
         if ask_want.exists().await && ark_want.exists().await {
             return load_files(ask_want, ark_want, format).await;
@@ -174,7 +173,7 @@ pub async fn get_kds_ark_ask_certs_bytes(
     }
 
     // Not found, get a write lock.
-    let _guard = ArkFetchLockFile::write().await?;
+    let _guard = ARK_FETCH_LOCK.write().await;
 
     // Check one last time.
     if ask_want.exists().await && ark_want.exists().await {
@@ -225,16 +224,9 @@ pub async fn get_kds_ark_ask_certs_bytes(
 pub async fn get_kds_ark_ask_certs(product_name: &str) -> Result<(X509, X509)> {
     let cache_key = format!("{}", product_name);
 
-    {
-        // Load from cache
-        let mut cache = ARK_CERT_CACHE.lock().await;
-
-        match cache.cache_get(&cache_key) {
-            Some((ark_cert, ask_cert)) => {
-                return Ok((ark_cert.clone(), ask_cert.clone()));
-            }
-            None => {}
-        }
+    // Try to get from cache
+    if let Some((ark_cert, ask_cert)) = ARK_CERT_CACHE.get(&cache_key).await {
+        return Ok((ark_cert.clone(), ask_cert.clone()));
     }
 
     let (ark_bytes, ask_bytes) = get_kds_ark_ask_certs_bytes(product_name, CertFormat::DER).await?;
@@ -251,9 +243,9 @@ pub async fn get_kds_ark_ask_certs(product_name: &str) -> Result<(X509, X509)> {
     })?;
 
     // Store in cache
-    let mut cache = ARK_CERT_CACHE.lock().await;
-
-    cache.cache_set(cache_key, (ark_cert.clone(), ask_cert.clone()));
+    ARK_CERT_CACHE
+        .insert(cache_key, (ark_cert.clone(), ask_cert.clone()))
+        .await;
 
     Ok((ark_cert, ask_cert))
 }
@@ -384,7 +376,7 @@ pub async fn get_kds_vcek_cert_bytes(
 
     {
         // Try read lock first and check if exists.
-        let _guard = ArkFetchLockFile::read().await?;
+        let _guard = ARK_FETCH_LOCK.read().await;
 
         if want_file.exists().await {
             return load_file(want_file, format).await;
@@ -392,7 +384,7 @@ pub async fn get_kds_vcek_cert_bytes(
     }
 
     // Doesn't exist, get write lock.
-    let _guard = ArkFetchLockFile::write().await?;
+    let _guard = ARK_FETCH_LOCK.write().await;
 
     // Check exists one last time.
     if want_file.exists().await {
@@ -427,14 +419,10 @@ pub async fn get_kds_vcek_cert(
         "{}-{}-{:0>2}{:0>2}{:0>2}{:0>2}",
         product_name, chip_id, boot_loader, tee, snp, microcode
     );
-    {
-        // Load from cache
-        let mut cache = VCEK_CERT_CACHE.lock().await;
 
-        match cache.cache_get(&cache_key) {
-            Some(cert) => return Ok(cert.clone()),
-            None => {}
-        }
+    // Try to get from cache
+    if let Some(cert) = VCEK_CERT_CACHE.get(&cache_key).await {
+        return Ok(cert.clone());
     }
 
     let vcek_bytes = get_kds_vcek_cert_bytes(
@@ -454,9 +442,7 @@ pub async fn get_kds_vcek_cert(
     })?;
 
     // Store in cache
-    let mut cache = VCEK_CERT_CACHE.lock().await;
-
-    cache.cache_set(cache_key, vcek_cert.clone());
+    VCEK_CERT_CACHE.insert(cache_key, vcek_cert.clone()).await;
 
     Ok(vcek_cert)
 }
@@ -517,6 +503,7 @@ impl KdsCertificates for AttestationReport {
     }
 
     async fn verify_certs(&self) -> Result<()> {
+        trace!("AttestationReport::verify_certs()");
         let (ask_cert, ark_cert) = get_kds_ark_ask_certs(PRODUCT_NAME_MILAN).await?;
         let vcek_cert = get_kds_vcek_cert(
             PRODUCT_NAME_MILAN,
@@ -527,52 +514,7 @@ impl KdsCertificates for AttestationReport {
             self.platform_version.microcode,
         )
         .await?;
-
         validate_ark_ask_vcek_certs(&ark_cert, &ask_cert, Some(&vcek_cert))
-    }
-}
-
-// Utils
-
-struct ArkFetchLockFile {
-    file: File,
-}
-
-impl ArkFetchLockFile {
-    pub async fn new(flag: libc::c_int) -> Result<Self> {
-        let filename = cache_file_path(
-            format!("{}/{}", CACHE_PREFIX, ARK_FETCH_LOCK_FILE).as_str(),
-            true,
-        )
-        .await;
-
-        let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .append(true)
-            .open(&filename)
-            .await
-            .map_err(error::map_io_err)?;
-
-        flock(&file, flag)?;
-
-        Ok(Self { file })
-    }
-
-    pub async fn write() -> Result<Self> {
-        Self::new(libc::LOCK_EX).await
-    }
-
-    pub async fn read() -> Result<Self> {
-        Self::new(libc::LOCK_SH).await
-    }
-}
-
-impl Drop for ArkFetchLockFile {
-    fn drop(&mut self) {
-        if let Err(err) = flock(&self.file, libc::LOCK_UN) {
-            warn!("failed to unlock: {:?}", err);
-        }
     }
 }
 

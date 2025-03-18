@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 
 #[cfg(not(test))]
-use log::{warn};
+use tracing::warn;
 
 #[cfg(test)]
-use std::{println as warn};
+use std::println as warn;
 
-use crate::{AttestationReport, error};
-use crate::guest::attestation::certs::{KdsCertificates};
-use crate::error::Result as Result;
+use crate::error::Result;
+use crate::guest::attestation::certs::KdsCertificates;
+use crate::{error, AttestationReport};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[allow(unused)]
@@ -17,7 +17,7 @@ pub struct Policy {
     require_no_ma: bool,
     require_no_smt: bool,
     require_id_key: bool,
-    require_author_key: bool
+    require_author_key: bool,
 }
 
 impl Policy {
@@ -26,21 +26,23 @@ impl Policy {
         require_no_ma: bool,
         require_no_smt: bool,
         require_id_key: bool,
-        require_author_key: bool
+        require_author_key: bool,
     ) -> Self {
         Self {
-            require_no_debug, require_no_ma, require_no_smt, require_id_key, require_author_key
+            require_no_debug,
+            require_no_ma,
+            require_no_smt,
+            require_id_key,
+            require_author_key,
         }
     }
 
     pub fn permissive() -> Self {
-        Self::new(false, false, false,
-                  false, false)
+        Self::new(false, false, false, false, false)
     }
 
     pub fn strict() -> Self {
-        Self::new(true, true, false,
-                  true, true)
+        Self::new(true, true, false, true, true)
     }
 }
 
@@ -59,9 +61,8 @@ impl Verification for AttestationReport {
         if !verify_report_signature(self).await? {
             warn!("report ECDSA signature verification failed");
 
-            return Ok(false)
+            return Ok(false);
         }
-
         // Custom (extra) verification
         if let Some(policy) = policy {
             if policy.require_no_debug && self.policy_debug_allowed() {
@@ -98,18 +99,24 @@ impl Verification for AttestationReport {
 async fn verify_report_signature(report: &AttestationReport) -> Result<bool> {
     let vcek_ec = report.get_kds_vcek_ec_key().await?;
 
-    let sig = report.signature.to_ecdsa_sig()
-        .map_err(|e| error::cert(Some(format!("failed to extract ECDSA sig: {:?}", e).to_string())))?;
+    let sig = report.signature.to_ecdsa_sig().map_err(|e| {
+        error::cert(Some(
+            format!("failed to extract ECDSA sig: {:?}", e).to_string(),
+        ))
+    })?;
 
-    Ok(
-        sig.verify(report.sha384().as_slice(), &vcek_ec)
-            .map_err(|e| error::cert(Some(format!("report signature verification failed: {:?}", e).to_string())))?
-    )
+    Ok(sig
+        .verify(report.sha384().as_slice(), &vcek_ec)
+        .map_err(|e| {
+            error::cert(Some(
+                format!("report signature verification failed: {:?}", e).to_string(),
+            ))
+        })?)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{env};
+    use std::env;
     use std::path::PathBuf;
 
     use crate::guest::attestation::report::AttestationReport;
@@ -127,13 +134,17 @@ mod tests {
 
         assert_eq!(report.sha384_hex(), "8ac02cb042d3909a0e67ecc8a89a4869d6838f0c243a5e4d417757d6c06d10ae15d84d2b728fe80a355792f671afd6b4");
 
-        let res = report.verify(Some(Policy::permissive())).await
+        let res = report
+            .verify(Some(Policy::permissive()))
+            .await
             .expect("failed to call verify");
 
         assert_eq!(res, true);
 
         // Should fail due to missing id key
-        let res = report.verify(Some(Policy::strict())).await
+        let res = report
+            .verify(Some(Policy::strict()))
+            .await
             .expect("failed to call verify");
 
         assert_eq!(res, false);
@@ -149,8 +160,7 @@ mod tests {
         // Incorrect hash for signature.
         assert_eq!(report.sha384_hex(), "125a8e5748291b4d6ab719a28f72c9a9d28ce22b91af78fe627c29433eb03495f2cfcd4d67222abf05291f1bbf9455cd");
 
-        let res = report.verify(None).await
-            .expect("failed to call verify");
+        let res = report.verify(None).await.expect("failed to call verify");
 
         assert_eq!(res, false);
     }

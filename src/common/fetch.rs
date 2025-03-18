@@ -7,7 +7,7 @@ use async_std::{fs, task};
 use bytes::Bytes;
 use reqwest::Client;
 use tokio::sync::Mutex;
-use tracing::{debug, trace, warn};
+use tracing::{trace, warn};
 
 use crate::common::cache::cache_file_path;
 use crate::error;
@@ -20,7 +20,13 @@ pub async fn fetch_url(
     retry_sleep_ms: u64,
     retry_sleep_exponent_ms: u64,
 ) -> error::Result<Option<Bytes>> {
-    trace!("fetch_url: url: {}", url);
+    trace!(
+        "fetch_url: url: {}, attempts: {}, retry_sleep_ms: {}, retry_sleep_exponent_ms: {}",
+        url,
+        attempts,
+        retry_sleep_ms,
+        retry_sleep_exponent_ms
+    );
 
     let _guard = tokio::time::timeout(Duration::from_secs(10), FETCH_LOCK.lock())
         .await
@@ -86,7 +92,7 @@ pub async fn fetch_url(
             return Err(error::fetch(err_msg, None));
         }
 
-        debug!(
+        trace!(
             "{} (attempt {} of {}) waiting for {}ms",
             &err_msg,
             attempt + 1,
