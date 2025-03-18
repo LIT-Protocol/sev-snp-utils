@@ -1,14 +1,14 @@
+use bytemuck::{try_from_bytes, Pod, Zeroable};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use bytemuck::{Pod, try_from_bytes, Zeroable};
 
 use libc::{c_uchar, c_uint};
 use uuid::{Bytes, Uuid};
 
-use crate::common::binary::{fmt_slice_vec_to_hex};
+use crate::common::binary::fmt_slice_vec_to_hex;
 use crate::common::guid::guid_le_to_slice;
-use crate::error::{conversion, io, Result, validation};
+use crate::error::{conversion, io, validation, Result};
 
 const EXPECTED_METADATA_SIG: &[u8] = b"ASEV";
 
@@ -26,7 +26,7 @@ pub enum SectionType {
     SnpSecrets = 2,
     CPUID = 3,
     SvsmCaa = 4,
-    SnpKernelHashes = 0x10
+    SnpKernelHashes = 0x10,
 }
 
 impl TryFrom<u8> for SectionType {
@@ -40,7 +40,10 @@ impl TryFrom<u8> for SectionType {
             4 => Ok(SectionType::SvsmCaa),
             0x10 => Ok(SectionType::SnpKernelHashes),
             _ => {
-                return Err(conversion(format!("value: '{}' cannot map to SectionType", value), None));
+                return Err(conversion(
+                    format!("value: '{}' cannot map to SectionType", value),
+                    None,
+                ));
             }
         }
     }
@@ -56,11 +59,9 @@ pub struct OvmfSevMetadataSectionDesc {
 
 impl OvmfSevMetadataSectionDesc {
     pub fn try_from_bytes(value: &[u8], offset: usize) -> Result<&Self> {
-        let value = &value[offset..offset +
-            std::mem::size_of::<OvmfSevMetadataSectionDesc>()];
+        let value = &value[offset..offset + std::mem::size_of::<OvmfSevMetadataSectionDesc>()];
 
-        try_from_bytes(value)
-            .map_err(|e| conversion(e.to_string(), None))
+        try_from_bytes(value).map_err(|e| conversion(e.to_string(), None))
     }
 
     pub fn gpa(&self) -> u32 {
@@ -80,13 +81,9 @@ impl OvmfSevMetadataSectionDesc {
     }
 }
 
-unsafe impl Zeroable for OvmfSevMetadataSectionDesc {
+unsafe impl Zeroable for OvmfSevMetadataSectionDesc {}
 
-}
-
-unsafe impl Pod for OvmfSevMetadataSectionDesc {
-
-}
+unsafe impl Pod for OvmfSevMetadataSectionDesc {}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -99,11 +96,9 @@ pub struct OvmfSevMetadataHeader {
 
 impl OvmfSevMetadataHeader {
     pub fn try_from_bytes(value: &[u8], offset: usize) -> Result<&Self> {
-        let value = &value[offset..offset +
-            std::mem::size_of::<OvmfSevMetadataHeader>()];
+        let value = &value[offset..offset + std::mem::size_of::<OvmfSevMetadataHeader>()];
 
-        try_from_bytes(value)
-            .map_err(|e| conversion(e.to_string(), None))
+        try_from_bytes(value).map_err(|e| conversion(e.to_string(), None))
     }
 
     pub fn signature(&self) -> &[u8; 4] {
@@ -125,50 +120,47 @@ impl OvmfSevMetadataHeader {
     pub fn verify(&self) -> Result<()> {
         if !self.signature.eq(EXPECTED_METADATA_SIG) {
             return match String::from_utf8(self.signature.to_vec()) {
-                Ok(sig) => {
-                    Err(validation(format!("Wrong SEV metadata signature: {}", sig),
-                                   None))
-                }
-                Err(_e) => {
-                    Err(validation(format!("Wrong SEV metadata signature: {:?}", self.signature),
-                                   None))
-                }
+                Ok(sig) => Err(validation(
+                    format!("Wrong SEV metadata signature: {}", sig),
+                    None,
+                )),
+                Err(_e) => Err(validation(
+                    format!("Wrong SEV metadata signature: {:?}", self.signature),
+                    None,
+                )),
             };
         }
         if self.version != 1 {
-            return Err(validation(format!("Wrong SEV metadata version: {:?}", self.version),
-                           None));
+            return Err(validation(
+                format!("Wrong SEV metadata version: {:?}", self.version),
+                None,
+            ));
         }
 
         Ok(())
     }
 }
 
-unsafe impl Zeroable for OvmfSevMetadataHeader {
+unsafe impl Zeroable for OvmfSevMetadataHeader {}
 
-}
-
-unsafe impl Pod for OvmfSevMetadataHeader {
-
-}
+unsafe impl Pod for OvmfSevMetadataHeader {}
 
 pub struct OVMF {
     data: Vec<u8>,
     table: HashMap<String, Vec<u8>>,
     metadata_header: Option<OvmfSevMetadataHeader>,
-    metadata_items: Vec<OvmfSevMetadataSectionDesc>
+    metadata_items: Vec<OvmfSevMetadataSectionDesc>,
 }
 
 impl OVMF {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let data = fs::read(&path)
-            .map_err(|e| io(e, None))?;
+        let data = fs::read(&path).map_err(|e| io(e, None))?;
 
         let mut ovmf = Self {
             data,
             table: HashMap::new(),
             metadata_header: None,
-            metadata_items: Vec::new()
+            metadata_items: Vec::new(),
         };
 
         ovmf.parse_footer_table()?;
@@ -197,9 +189,13 @@ impl OVMF {
 
     pub fn has_metadata_section(&self, section_type: SectionType) -> bool {
         // return any(True for s in self.metadata_items() if s.section_type() == section_type)
-        for item in self.metadata_items(){
-            if section_type == item.section_type().expect("item is valid, thus section type must parse") {
-                return true
+        for item in self.metadata_items() {
+            if section_type
+                == item
+                    .section_type()
+                    .expect("item is valid, thus section type must parse")
+            {
+                return true;
             }
         }
         false
@@ -207,21 +203,23 @@ impl OVMF {
 
     pub fn is_sev_hashes_table_supported(&self) -> bool {
         // XXX: Swallows the error
-        self.table.get(SEV_HASH_TABLE_RV_GUID).is_some() && (self.sev_hashes_table_gpa().unwrap_or(0) != 0)
+        self.table.get(SEV_HASH_TABLE_RV_GUID).is_some()
+            && (self.sev_hashes_table_gpa().unwrap_or(0) != 0)
     }
 
     pub fn sev_hashes_table_gpa(&self) -> Result<i32> {
         match self.table_item(SEV_HASH_TABLE_RV_GUID) {
             Some(entry) => {
-                let val: [u8; 4] = entry[..4]
-                    .try_into()
-                    .map_err(|e| conversion(e, None))?;
+                let val: [u8; 4] = entry[..4].try_into().map_err(|e| conversion(e, None))?;
                 let val: i32 = i32::from_le_bytes(val);
 
                 Ok(val)
             }
             None => {
-                return Err(validation("OVMF SEV metadata: missing table guid 'SEV_HASH_TABLE_RV_GUID'", None));
+                return Err(validation(
+                    "OVMF SEV metadata: missing table guid 'SEV_HASH_TABLE_RV_GUID'",
+                    None,
+                ));
             }
         }
     }
@@ -229,9 +227,7 @@ impl OVMF {
     pub fn sev_es_reset_eip(&self) -> Result<u64> {
         match self.table_item(SEV_ES_RESET_BLOCK_GUID) {
             Some(entry) => {
-                let val: [u8; 4] = entry[..4]
-                    .try_into()
-                    .map_err(|e| conversion(e, None))?;
+                let val: [u8; 4] = entry[..4].try_into().map_err(|e| conversion(e, None))?;
                 let val: i32 = i32::from_le_bytes(val);
                 if val < 0 {
                     return Err(validation("sev_es_reset_eip < 0", None));
@@ -240,7 +236,10 @@ impl OVMF {
                 Ok(val as u64)
             }
             None => {
-                return Err(validation("OVMF SEV metadata: missing table guid 'SEV_ES_RESET_BLOCK_GUID'", None));
+                return Err(validation(
+                    "OVMF SEV metadata: missing table guid 'SEV_ES_RESET_BLOCK_GUID'",
+                    None,
+                ));
             }
         }
     }
@@ -251,15 +250,21 @@ impl OVMF {
         self.table.clear();
         let len = self.data.len();
 
-        let footer_guid = &self.data[len-48..len-32];
+        let footer_guid = &self.data[len - 48..len - 32];
         let expected_footer_guid = guid_le_to_slice(OVMF_TABLE_FOOTER_GUID)?;
         if !footer_guid.eq(&expected_footer_guid) {
-            return Err(validation(format!("OVMF table footer GUID does not match ({} vs {})",
-                                          fmt_slice_vec_to_hex(&expected_footer_guid),
-                                          fmt_slice_vec_to_hex(footer_guid)), None));
+            return Err(validation(
+                format!(
+                    "OVMF table footer GUID does not match ({} vs {})",
+                    fmt_slice_vec_to_hex(&expected_footer_guid),
+                    fmt_slice_vec_to_hex(footer_guid)
+                ),
+                None,
+            ));
         }
 
-        let full_table_size: [u8; 2] = self.data[len-50..len-48].try_into()
+        let full_table_size: [u8; 2] = self.data[len - 50..len - 48]
+            .try_into()
             .map_err(|e| conversion(e, None))?;
         let full_table_size: i16 = i16::from_le_bytes(full_table_size);
         let table_size = full_table_size - 16 - 2;
@@ -268,16 +273,14 @@ impl OVMF {
         }
         let table_size: usize = table_size as usize;
 
-        let mut table_bytes = &self.data[len-50-table_size..len-50];
+        let mut table_bytes = &self.data[len - 50 - table_size..len - 50];
         while table_bytes.len() >= (16 + 2) {
             let table_bytes_len = table_bytes.len();
-            let entry_guid = &table_bytes[table_bytes_len-16..];
-            let entry_guid_bytes: Bytes = entry_guid
-                .try_into()
-                .map_err(|e| conversion(e, None))?;
+            let entry_guid = &table_bytes[table_bytes_len - 16..];
+            let entry_guid_bytes: Bytes = entry_guid.try_into().map_err(|e| conversion(e, None))?;
             let entry_guid_str = Uuid::from_bytes_le(entry_guid_bytes).to_string();
 
-            let entry_size: [u8; 2] = table_bytes[table_bytes_len-18..table_bytes_len-16]
+            let entry_size: [u8; 2] = table_bytes[table_bytes_len - 18..table_bytes_len - 16]
                 .try_into()
                 .map_err(|e| conversion(e, None))?;
             let entry_size: i16 = i16::from_le_bytes(entry_size);
@@ -286,11 +289,11 @@ impl OVMF {
             }
             let entry_size: usize = entry_size as usize;
 
-            let entry_data = &table_bytes[table_bytes_len-entry_size..table_bytes_len-18];
+            let entry_data = &table_bytes[table_bytes_len - entry_size..table_bytes_len - 18];
 
             self.table.insert(entry_guid_str, entry_data.to_vec());
 
-            table_bytes = &table_bytes[..table_bytes_len-entry_size];
+            table_bytes = &table_bytes[..table_bytes_len - entry_size];
         }
 
         Ok(())
@@ -299,23 +302,21 @@ impl OVMF {
     fn parse_sev_metadata(&mut self) -> Result<()> {
         match self.table.get(OVMF_SEV_META_DATA_GUID) {
             Some(entry) => {
-                let offset_from_end: [u8; 4] = entry[..4]
-                    .try_into()
-                    .map_err(|e| conversion(e, None))?;
+                let offset_from_end: [u8; 4] =
+                    entry[..4].try_into().map_err(|e| conversion(e, None))?;
                 let offset_from_end: i32 = i32::from_le_bytes(offset_from_end);
                 let start = self.data.len() - (offset_from_end as usize);
 
-                let header =
-                    OvmfSevMetadataHeader::try_from_bytes(self.data.as_slice(), start)?;
+                let header = OvmfSevMetadataHeader::try_from_bytes(self.data.as_slice(), start)?;
                 header.verify()?;
 
-                let items = &self.data[start+std::mem::size_of::<OvmfSevMetadataHeader>()..start+(header.size as usize)];
+                let items = &self.data[start + std::mem::size_of::<OvmfSevMetadataHeader>()
+                    ..start + (header.size as usize)];
 
                 for i in 0..header.num_items() {
                     let offset = (i as usize) * std::mem::size_of::<OvmfSevMetadataSectionDesc>();
 
-                    let item =
-                        OvmfSevMetadataSectionDesc::try_from_bytes(items, offset)?;
+                    let item = OvmfSevMetadataSectionDesc::try_from_bytes(items, offset)?;
 
                     self.metadata_items.push(item.to_owned());
                 }
@@ -333,19 +334,18 @@ impl OVMF {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use crate::common::binary::fmt_slice_vec_to_hex;
-    use crate::guest::measure::ovmf::{OVMF, SectionType};
+    use crate::guest::measure::ovmf::{SectionType, OVMF};
+    use std::path::PathBuf;
 
     #[test]
     fn ovmf_file_test() {
-        const TEST_OVMF_FILE: &str = "resources/test/measure/OVMF.fd";
+        const TEST_OVMF_FILE: &str = "resources/test/measure/OVMF_CODE.fd";
 
         let mut test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_file.push(TEST_OVMF_FILE);
 
-        let ovmf = OVMF::from_path(&test_file)
-            .expect("failed to load OVMF file");
+        let ovmf = OVMF::from_path(&test_file).expect("failed to load OVMF file");
 
         let metadata_header = ovmf.metadata_header.unwrap();
         metadata_header.verify().unwrap();
@@ -386,7 +386,7 @@ mod tests {
             ("4c2eb361-7d9b-4cc3-8081-127c90d3d294", "00f08000000c0000"),
             ("7255371f-3a3b-4b04-927b-1da6efa8d454", "00fc800000040000"),
             ("dc886566-984a-4798-a75e-5585a7bf67cc", "2c050000"),
-            ("e47a6535-984a-4798-865e-4685a7bf8ec2", "40080000")
+            ("e47a6535-984a-4798-865e-4685a7bf8ec2", "40080000"),
         ] {
             println!("Running table_item test guid: {}", guid);
 
