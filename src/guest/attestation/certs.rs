@@ -1,5 +1,4 @@
 use async_std::fs;
-use async_std::fs::{File, OpenOptions};
 use async_std::path::PathBuf;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -10,15 +9,14 @@ use openssl::pkey::Public;
 use openssl::x509::X509;
 use pem::parse_many;
 use std::env;
-use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{trace, warn};
+use tracing::trace;
 
-use crate::common::cache::{cache_dir_path, cache_file_path};
+use crate::common::cache::cache_dir_path;
 use crate::common::cert::{x509_to_ec_key, x509_validate_signature};
 use crate::common::env::{ENV_CACHE_ENTRIES_VCEK_DEFAULT, ENV_CACHE_ENTRIES_VCEK_KEY};
 use crate::common::fetch::fetch_url_cached;
-use crate::common::file::{flock, write_bytes_to_file};
+use crate::common::file::write_bytes_to_file;
 use crate::common::pem::{der_to_pem, PEM_CERTIFICATE};
 use crate::error::Result;
 use crate::{error, AttestationReport};

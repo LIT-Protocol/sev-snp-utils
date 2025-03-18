@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Seek;
 use std::io::{Cursor, Read};
 use std::os::fd::AsRawFd;
+use tracing::trace;
 
 use crate::common::binary::read_exact_to_bin_vec;
 use crate::error::{io, validation, Result};
