@@ -88,7 +88,7 @@ fn get_vcek_cache_suffix(product_name: &str) -> String {
 }
 
 pub async fn fetch_kds_vcek_cert_chain_pem(product_name: &str) -> Result<Bytes> {
-    println!(
+    trace!(
         "fetch_kds_vcek_cert_chain_pem: product_name: {}",
         product_name
     );
@@ -111,7 +111,7 @@ pub async fn get_kds_ark_ask_certs_bytes(
     product_name: &str,
     format: CertFormat,
 ) -> Result<(Bytes, Bytes)> {
-    println!(
+    trace!(
         "get_kds_ark_ask_certs_bytes: product_name: {}",
         product_name
     );
@@ -144,7 +144,6 @@ pub async fn get_kds_ark_ask_certs_bytes(
         ark_want: &PathBuf,
         format: CertFormat,
     ) -> Result<(Bytes, Bytes)> {
-        println!("get_kds_ark_ask_certs_bytes - loading files");
         let ask_bytes = fs::read(ask_want).await.map_err(|e| {
             crate::error::io(
                 e,
@@ -155,7 +154,6 @@ pub async fn get_kds_ark_ask_certs_bytes(
                 )),
             )
         })?;
-        println!("get_kds_ark_ask_certs_bytes - loading files - read ark");
         let ark_bytes = fs::read(&ark_want).await.map_err(|e| {
             crate::error::io(
                 e,
@@ -166,11 +164,8 @@ pub async fn get_kds_ark_ask_certs_bytes(
                 )),
             )
         })?;
-        println!("get_kds_ark_ask_certs_bytes - loading files - read ask");
         return Ok((Bytes::from(ark_bytes), Bytes::from(ask_bytes)));
     }
-
-    println!("get_kds_ark_ask_certs_bytes - loading files");
 
     {
         // Try read lock first and check if exists.
@@ -181,18 +176,14 @@ pub async fn get_kds_ark_ask_certs_bytes(
         }
     }
 
-    println!("get_kds_ark_ask_certs_bytes - getting write lock");
     // Not found, get a write lock.
     let _guard = ARK_FETCH_LOCK.write().await;
 
-    println!("get_kds_ark_ask_certs_bytes - checking if files exist");
     // Check one last time.
     if ask_want.exists().await && ark_want.exists().await {
-        println!("get_kds_ark_ask_certs_bytes - files exist");
         return load_files(ask_want, ark_want, format).await;
     }
 
-    println!("get_kds_ark_ask_certs_bytes - fetching cert chain");
     match fetch_kds_vcek_cert_chain_pem(product_name).await {
         Ok(body) => {
             // Extract pems
@@ -516,9 +507,8 @@ impl KdsCertificates for AttestationReport {
     }
 
     async fn verify_certs(&self) -> Result<()> {
-        println!("AttestationReport::verify_certs - getting ark_ask_certs");
+        trace!("AttestationReport::verify_certs()");
         let (ask_cert, ark_cert) = get_kds_ark_ask_certs(PRODUCT_NAME_MILAN).await?;
-        println!("AttestationReport::verify_certs - got ark_ask_certs");
         let vcek_cert = get_kds_vcek_cert(
             PRODUCT_NAME_MILAN,
             self.chip_id_hex().as_str(),
@@ -528,7 +518,6 @@ impl KdsCertificates for AttestationReport {
             self.platform_version.microcode,
         )
         .await?;
-        println!("AttestationReport::verify_certs - got vcek_cert");
         validate_ark_ask_vcek_certs(&ark_cert, &ask_cert, Some(&vcek_cert))
     }
 }

@@ -54,10 +54,8 @@ pub trait Verification {
 #[async_trait]
 impl Verification for AttestationReport {
     async fn verify(&self, policy: Option<Policy>) -> Result<bool> {
-        println!("AttestationReport::verify");
         // Verify cert chain
         self.verify_certs().await?;
-        println!("AttestationReport::verify - certs verified");
 
         // Verify report signature
         if !verify_report_signature(self).await? {
@@ -65,7 +63,6 @@ impl Verification for AttestationReport {
 
             return Ok(false);
         }
-        println!("AttestationReport::verify - signature verified");
         // Custom (extra) verification
         if let Some(policy) = policy {
             if policy.require_no_debug && self.policy_debug_allowed() {
