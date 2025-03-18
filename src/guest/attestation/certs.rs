@@ -47,8 +47,6 @@ const ASK_PEM_FILENAME: &str = "ask.pem";
 const ARK_DER_FILENAME: &str = "ark.der";
 const ARK_PEM_FILENAME: &str = "ark.pem";
 
-const ARK_FETCH_LOCK_FILE: &str = "ark_fetch.lock";
-
 static ARK_CERT_CACHE: Lazy<Cache<String, (X509, X509)>> =
     Lazy::new(|| Cache::builder().max_capacity(10).build());
 
