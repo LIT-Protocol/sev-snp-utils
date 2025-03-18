@@ -224,8 +224,9 @@ mod tests {
 
     const RESOURCES_TEST_DIR: &str = "resources/test/measure";
 
-    // commented out because it has hardcoded measurements and would need
-    // to manually remeasure to get this test to pass
+    // this test must be run in a guest VM, and just checks
+    // that we can get any measurement.  we don't check the measurement
+    // anymore because we don't have the hardcoded comparisons that are correct
     #[test]
     fn calc_launch_digest_test() {
         let ovmf_path = get_test_path("ovmf_AmdSev_suffix.bin"); // note: OVMF must have hashes table built in
