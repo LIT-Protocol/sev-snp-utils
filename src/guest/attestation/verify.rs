@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 #[cfg(not(test))]
-use log::{trace, warn};
+use tracing::warn;
 
 #[cfg(test)]
 use std::println as warn;

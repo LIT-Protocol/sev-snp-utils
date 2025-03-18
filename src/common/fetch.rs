@@ -7,7 +7,7 @@ use async_std::{fs, task};
 use bytes::Bytes;
 use reqwest::Client;
 use tokio::sync::Mutex;
-use tracing::{debug, trace, warn};
+use tracing::{trace, warn};
 
 use crate::common::cache::cache_file_path;
 use crate::error;

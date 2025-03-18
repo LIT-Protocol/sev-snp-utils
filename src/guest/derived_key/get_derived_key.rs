@@ -1,12 +1,23 @@
-use std::{io::{Read, Seek, Cursor}, fs::File};
 use std::os::fd::AsRawFd;
+use std::{
+    fs::File,
+    io::{Cursor, Read, Seek},
+};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use log::debug;
+use tracing::debug;
 
-use crate::{common::binary::read_exact_to_bin_vec, error::{self, Result, io}, guest::ioctl::guest_request_types::{snp_get_derived_key, SNP_DERIVED_KEY_RESP_HEADER_BYTES, SEV_GUEST_DEVICE}};
+use crate::{
+    common::binary::read_exact_to_bin_vec,
+    error::{self, io, Result},
+    guest::ioctl::guest_request_types::{
+        snp_get_derived_key, SEV_GUEST_DEVICE, SNP_DERIVED_KEY_RESP_HEADER_BYTES,
+    },
+};
 
-use crate::guest::ioctl::guest_request_types::{SNP_DERIVED_KEY_MSG_RESP_RESERVED_BYTES, SNPGuestRequestGetDerivedKeyIOCTL};
+use crate::guest::ioctl::guest_request_types::{
+    SNPGuestRequestGetDerivedKeyIOCTL, SNP_DERIVED_KEY_MSG_RESP_RESERVED_BYTES,
+};
 
 use super::derived_key::DerivedKey;
 
@@ -18,11 +29,16 @@ pub struct RequestDerivedKeyMsgHeader {
 
 impl RequestDerivedKeyMsgHeader {
     pub fn from_reader(mut rdr: impl Read + Seek) -> Result<Self> {
-        let status = rdr.read_u32::<LittleEndian>()
-            .map_err(error::map_io_err)?;
+        let status = rdr.read_u32::<LittleEndian>().map_err(error::map_io_err)?;
         let reserved = read_exact_to_bin_vec(&mut rdr, SNP_DERIVED_KEY_MSG_RESP_RESERVED_BYTES)?;
 
-        Ok(RequestDerivedKeyMsgHeader { status, reserved: reserved.as_slice().try_into().map_err(error::map_conversion_err)? })
+        Ok(RequestDerivedKeyMsgHeader {
+            status,
+            reserved: reserved
+                .as_slice()
+                .try_into()
+                .map_err(error::map_conversion_err)?,
+        })
     }
 }
 
@@ -80,7 +96,7 @@ impl DerivedKeyRequestBuilder {
         self.inner.mix_with_family_id = true;
         self
     }
-    
+
     pub fn with_image_id(&mut self) -> &mut Self {
         self.inner.mix_with_image_id = true;
         self
@@ -113,31 +129,56 @@ impl DerivedKeyRequester for DerivedKey {
         );
 
         // Open the /dev/sev-guest device.
-        let fd = File::options().read(true).write(true).open(SEV_GUEST_DEVICE)
+        let fd = File::options()
+            .read(true)
+            .write(true)
+            .open(SEV_GUEST_DEVICE)
             .map_err(|e| error::io(e, None))?;
 
         // Issue the guest request IOCTL.
         debug!("Issuing the guest request IOCTL");
         unsafe {
-            let ret_code = snp_get_derived_key(fd.as_raw_fd(), &mut snp_guest_request_get_derived_key_ioctl)
-                .map_err(|e| error::io(e, Some("Error sending IOCTL".into())))?;
+            let ret_code =
+                snp_get_derived_key(fd.as_raw_fd(), &mut snp_guest_request_get_derived_key_ioctl)
+                    .map_err(|e| error::io(e, Some("Error sending IOCTL".into())))?;
             if ret_code == -1 {
-                return Err(io(format!("Firmware error: {}", snp_guest_request_get_derived_key_ioctl.fw_err), None));
+                return Err(io(
+                    format!(
+                        "Firmware error: {}",
+                        snp_guest_request_get_derived_key_ioctl.fw_err
+                    ),
+                    None,
+                ));
             }
         }
-        debug!("Received IOCTL response: {:?}", snp_guest_request_get_derived_key_ioctl);
+        debug!(
+            "Received IOCTL response: {:?}",
+            snp_guest_request_get_derived_key_ioctl
+        );
 
         // Check that the derived key was successfully retrieved.
-        let mut resp_msg_bytes = snp_guest_request_get_derived_key_ioctl.resp_data.data.to_vec();
+        let mut resp_msg_bytes = snp_guest_request_get_derived_key_ioctl
+            .resp_data
+            .data
+            .to_vec();
         let resp_msg_header_bytes = resp_msg_bytes.drain(0..SNP_DERIVED_KEY_RESP_HEADER_BYTES);
         let resp_msg_header_rdr = Cursor::new(resp_msg_header_bytes);
         let resp_msg_header = RequestDerivedKeyMsgHeader::from_reader(resp_msg_header_rdr)?;
         debug!("Response Message Header: {:?}", resp_msg_header);
         if resp_msg_header.status != 0 {
-            return Err(io(format!("Non-zero status code {:?} with the following firmware error {:?}", resp_msg_header.status, snp_guest_request_get_derived_key_ioctl.fw_err), None));
+            return Err(io(
+                format!(
+                    "Non-zero status code {:?} with the following firmware error {:?}",
+                    resp_msg_header.status, snp_guest_request_get_derived_key_ioctl.fw_err
+                ),
+                None,
+            ));
         }
 
-        Ok(resp_msg_bytes.as_slice().try_into().map_err(error::map_conversion_err)?)
+        Ok(resp_msg_bytes
+            .as_slice()
+            .try_into()
+            .map_err(error::map_conversion_err)?)
     }
 }
 
@@ -145,7 +186,10 @@ impl DerivedKeyRequester for DerivedKey {
 mod tests {
     use std::{fs, io::Cursor};
 
-    use crate::guest::{derived_key::get_derived_key::RequestDerivedKeyMsgHeader, ioctl::guest_request_types::SNP_DERIVED_KEY_MSG_RESP_RESERVED_BYTES};
+    use crate::guest::{
+        derived_key::get_derived_key::RequestDerivedKeyMsgHeader,
+        ioctl::guest_request_types::SNP_DERIVED_KEY_MSG_RESP_RESERVED_BYTES,
+    };
 
     use super::DerivedKeyRequestBuilder;
 
@@ -154,10 +198,14 @@ mod tests {
     #[test]
     fn test_snp_derived_key_msg_resp_from_reader() {
         let file_data = fs::read(TEST_MSG_RESP_BIN).unwrap();
-        let snp_report_msg_resp = RequestDerivedKeyMsgHeader::from_reader(Cursor::new(file_data)).unwrap();
-        
+        let snp_report_msg_resp =
+            RequestDerivedKeyMsgHeader::from_reader(Cursor::new(file_data)).unwrap();
+
         assert_eq!(snp_report_msg_resp.status, 0);
-        assert_eq!(snp_report_msg_resp.reserved, [0; SNP_DERIVED_KEY_MSG_RESP_RESERVED_BYTES]);
+        assert_eq!(
+            snp_report_msg_resp.reserved,
+            [0; SNP_DERIVED_KEY_MSG_RESP_RESERVED_BYTES]
+        );
     }
 
     #[test]
